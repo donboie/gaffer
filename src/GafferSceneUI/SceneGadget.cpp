@@ -374,7 +374,8 @@ class SceneGadget::SceneGraph
 
 };
 
-class SceneGadget::UpdateTask : public tbb::task
+class SceneGadget::UpdateTask // : public tbb::task
+	// : public tbb::task
 {
 
 	public :
@@ -399,7 +400,9 @@ class SceneGadget::UpdateTask : public tbb::task
 		{
 		}
 
-		virtual task *execute()
+		virtual ~UpdateTask() {}
+
+		virtual tbb::task *execute()
 		{
 			ScenePlug::PathScope pathScope( m_sceneGadget->m_context.get(), m_scenePath );
 
@@ -417,8 +420,6 @@ class SceneGadget::UpdateTask : public tbb::task
 
 					IECore::ConstRunTimeTypedPtr glStateCachedTyped = IECoreGL::CachedConverter::defaultCachedConverter()->convert( attributes.get() );
 					IECoreGL::ConstStatePtr glStateCached = IECore::runTimeCast<const IECoreGL::State>( glStateCachedTyped );
-
-
 
 					IECoreGL::ConstStatePtr visState = NULL;
 
@@ -489,7 +490,7 @@ class SceneGadget::UpdateTask : public tbb::task
 				m_sceneGraph->m_expanded = m_sceneGadget->m_minimumExpansionDepth >= m_scenePath.size();
 				if( !m_sceneGraph->m_expanded )
 				{
-					m_sceneGraph->m_expanded = m_sceneGadget->m_expandedPaths->readable().match( m_scenePath ) & Filter::ExactMatch;
+					m_sceneGraph->m_expanded = (m_sceneGadget->m_expandedPaths->readable().match( m_scenePath ) & Filter::ExactMatch) != 0 ;
 				}
 			}
 
@@ -501,11 +502,11 @@ class SceneGadget::UpdateTask : public tbb::task
 				// We're not expanded, so we early out before updating the children.
 				// We do however need to see if we have any children, and arrange to
 				// draw their bounding box if we do.
-				bool haveChildren = m_sceneGraph->m_children.size();
+				bool haveChildren = m_sceneGraph->m_children.size() != 0;
 				if( m_dirtyFlags & ChildNamesDirty || !previouslyExpanded )
 				{
 					IECore::ConstInternedStringVectorDataPtr childNamesData = m_sceneGadget->m_scene->childNamesPlug()->getValue();
-					haveChildren = childNamesData->readable().size();
+					haveChildren = childNamesData->readable().size() != 0;
 				}
 
 				m_sceneGraph->clearChildren();
@@ -555,18 +556,20 @@ class SceneGadget::UpdateTask : public tbb::task
 
 			if( m_sceneGraph->m_children.size() )
 			{
-				set_ref_count( 1 + m_sceneGraph->m_children.size() );
+				//set_ref_count( 1 + m_sceneGraph->m_children.size() );
 
 				ScenePlug::ScenePath childPath = m_scenePath;
 				childPath.push_back( IECore::InternedString() ); // space for the child name
 				for( std::vector<SceneGraph *>::const_iterator it = m_sceneGraph->m_children.begin(), eIt = m_sceneGraph->m_children.end(); it != eIt; ++it )
 				{
 					childPath.back() = (*it)->m_name;
-					UpdateTask *t = new( allocate_child() ) UpdateTask( m_sceneGadget, *it, m_dirtyFlags, childPath );
-					spawn( *t );
+					UpdateTask *t = new UpdateTask( m_sceneGadget, *it, m_dirtyFlags, childPath ); //( allocate_child() )
+					t->execute();
+					delete t;
+					//spawn( *t );
 				}
 
-				wait_for_all();
+				//wait_for_all();
 			}
 
 			// Finally compute our bound from the child bounds.
@@ -866,8 +869,10 @@ void SceneGadget::updateSceneGraph() const
 
 	try
 	{
-		UpdateTask *task = new( tbb::task::allocate_root() ) UpdateTask( this, m_sceneGraph.get(), m_dirtyFlags, ScenePlug::ScenePath() );
-		tbb::task::spawn_root_and_wait( *task );
+		UpdateTask *task = new UpdateTask( this, m_sceneGraph.get(), m_dirtyFlags, ScenePlug::ScenePath() ); //( tbb::task::allocate_root() )
+		task->execute();
+		delete task;
+		//tbb::task::spawn_root_and_wait( *task );
 
 		if( m_dirtyFlags && UpdateTask::ChildNamesDirty )
 		{

@@ -124,7 +124,11 @@ const IECore::InternedString &GraphComponent::setName( const IECore::InternedStr
 					}
 				}
 			}
-			static boost::format formatter( "%s%d" );
+
+			//costly to construct a formatter so make it was make static but this was causing a problem
+			// memory stomp over the static perhaps?
+			boost::format formatter( "%s%d" );
+
 			newName = boost::str( formatter % prefix % suffix );
 		}
 	}
