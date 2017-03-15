@@ -43,6 +43,16 @@ import Gaffer
 import GafferUI
 
 QtGui = GafferUI._qtImport( "QtGui" )
+QtCore = GafferUI._qtImport( "QtCore" )
+
+
+def getScreenRect():
+	desktop = QtGui.QApplication.instance().desktop()
+	desktopRect = QtCore.QRect()
+	for screenIndex in range(desktop.numScreens()):
+		desktopRect |= desktop.screenGeometry(screenIndex)
+
+	return desktopRect
 
 ## \todo Fix bug when pressing up arrow with cursor to left of minus sign
 class NumericWidget( GafferUI.TextWidget ) :
@@ -65,6 +75,9 @@ class NumericWidget( GafferUI.TextWidget ) :
 		self.__editingFinishedConnection = self.editingFinishedSignal().connect( Gaffer.WeakMethod( self.__editingFinished ) )
 
 		self.__numericType = None
+		self.__screen_index = 0
+		self.__desktopRect = getScreenRect()
+
 		self.setValue( value )
 
 	def setValue( self, value ) :
@@ -204,6 +217,7 @@ class NumericWidget( GafferUI.TextWidget ) :
 			return None
 
 		self.__dragStart = event.line.p0.x
+		self.__screen_index = 0
 		# IECore.NullObject is the convention for data for drags which are intended
 		# only for the purposes of the originating widget.
 		return IECore.NullObject.defaultNullObject()
@@ -226,11 +240,11 @@ class NumericWidget( GafferUI.TextWidget ) :
 		self.__setValueFromDrag( event, self.ValueChangedReason.DragEnd )
 		self.__dragValue = None
 		self.__dragStart = None
+		self.__screen_index = 0
 		return True
 
 	def __setValueFromDrag( self, event, reason ) :
-
-		move = event.line.p0.x - self.__dragStart
+		move = event.line.p0.x - self.__dragStart + self.__desktopRect.width() * self.__screen_index
 
 		offset = 0
 		## \todo: come up with an official scheme after some user testing
@@ -242,6 +256,19 @@ class NumericWidget( GafferUI.TextWidget ) :
 		newValue = self.__numericType( float( self.__dragValue ) + offset )
 
 		self.__setValueInternal( newValue, reason )
+
+
+		globalPosition = self._qtWidget().mapToGlobal( QtCore.QPoint(event.line.p0.x, event.line.p0.y) )
+
+		edge = 3
+		if globalPosition.x() > self.__desktopRect.right() - edge:
+			globalPosition.setX(edge + 1)
+			self.__screen_index += 1
+			QtGui.QCursor.setPos(globalPosition)
+		elif globalPosition.x() < edge:
+			globalPosition.setX(self.__desktopRect.right() - edge -1)
+			self.__screen_index -= 1
+			QtGui.QCursor.setPos(globalPosition)
 
 	def __editingFinished( self, widget ) :
 
