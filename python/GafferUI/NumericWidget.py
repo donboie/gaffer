@@ -43,6 +43,7 @@ import Gaffer
 import GafferUI
 
 QtGui = GafferUI._qtImport( "QtGui" )
+QtCore = GafferUI._qtImport("QtCore")
 
 ## \todo Fix bug when pressing up arrow with cursor to left of minus sign
 class NumericWidget( GafferUI.TextWidget ) :
@@ -65,6 +66,8 @@ class NumericWidget( GafferUI.TextWidget ) :
 		self.__editingFinishedConnection = self.editingFinishedSignal().connect( Gaffer.WeakMethod( self.__editingFinished ) )
 
 		self.__numericType = None
+		self.__totalDistance = 0
+		self.__disableDrag = False
 		self.setValue( value )
 
 	def setValue( self, value ) :
@@ -199,11 +202,12 @@ class NumericWidget( GafferUI.TextWidget ) :
 		return True
 
 	def __dragBegin( self, widget, event ) :
-
 		if self.__dragValue is None :
 			return None
 
+		self.__disableDrag = False
 		self.__dragStart = event.line.p0.x
+		self.__startPos = QtGui.QCursor.pos()
 		# IECore.NullObject is the convention for data for drags which are intended
 		# only for the purposes of the originating widget.
 		return IECore.NullObject.defaultNullObject()
@@ -211,13 +215,13 @@ class NumericWidget( GafferUI.TextWidget ) :
 	def __dragEnter( self, widget, event ) :
 
 		if event.sourceWidget is self and self.__dragStart is not None :
+			self.__totalDistance = 0
 			self.__setValueFromDrag( event, self.ValueChangedReason.DragBegin )
 			return True
 
 		return False
 
 	def __dragMove( self, widget, event ) :
-
 		self.__setValueFromDrag( event, self.ValueChangedReason.DragMove )
 		return True
 
@@ -226,22 +230,38 @@ class NumericWidget( GafferUI.TextWidget ) :
 		self.__setValueFromDrag( event, self.ValueChangedReason.DragEnd )
 		self.__dragValue = None
 		self.__dragStart = None
+		self.__totalDistance = 0
+		#QtGui.QApplication.instance().restoreOverrideCursor();
+
 		return True
 
 	def __setValueFromDrag( self, event, reason ) :
 
+		if self.__disableDrag:
+			self.__disableDrag = False;
+
 		move = event.line.p0.x - self.__dragStart
 
+		self.__totalDistance += abs(move)
+
 		offset = 0
+
 		## \todo: come up with an official scheme after some user testing
 		if event.modifiers == GafferUI.ModifiableEvent.Modifiers.Control :
 			offset = 0.01 * move
 		elif event.modifiers == GafferUI.ModifiableEvent.Modifiers.ShiftControl :
-			offset = 0.00001 * math.pow( move, 3 )
+			offset = 0.00001 * move * math.pow( min(self.__totalDistance, 100), 3 )
 
-		newValue = self.__numericType( float( self.__dragValue ) + offset )
+		print "{0} {1}".format(offset, self.__totalDistance)
+		valueOffset = self.__numericType( offset )
 
-		self.__setValueInternal( newValue, reason )
+		self.__setValueInternal( self.getValue() + valueOffset, reason )
+
+		self.__disableDrag = True
+		#application = QtGui.QApplication.instance()
+		#application.setOverrideCursor(QtGui.QCursor(QtCore.Qt.BlankCursor))
+
+		QtGui.QCursor.setPos(self.__startPos)
 
 	def __editingFinished( self, widget ) :
 
