@@ -89,7 +89,8 @@ class gui( Gaffer.Application ) :
 
 	def _run( self, args ) :
 
-		GafferUI.ScriptWindow.connect( self.root() )
+		if not args["noDefaultScript"]:
+			GafferUI.ScriptWindow.connect( self.root() )
 
 		if len( args["scripts"] ) :
 			for fileName in args["scripts"] :
@@ -100,7 +101,6 @@ class gui( Gaffer.Application ) :
 				self.root()["scripts"].addChild( scriptNode )
 				GafferUI.FileMenu.addRecentFile( self, fileName )
 		elif args["noDefaultScript"] :
-			pass
 			print "not adding default script"
 		else:
 			print "creating default script"
