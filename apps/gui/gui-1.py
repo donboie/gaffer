@@ -69,6 +69,12 @@ class gui( Gaffer.Application ) :
 					description = "Opens the UI in full screen mode.",
 					defaultValue = False,
 				),
+
+				IECore.BoolParameter(
+					name = "noDefaultScript",
+					description = "If no scripts are supplied in 'scripts' don't create a default one",
+					defaultValue = False,
+				)
 			]
 
 		)
@@ -93,7 +99,11 @@ class gui( Gaffer.Application ) :
 				scriptNode.load( continueOnError = True )
 				self.root()["scripts"].addChild( scriptNode )
 				GafferUI.FileMenu.addRecentFile( self, fileName )
-		else :
+		elif args["noDefaultScript"] :
+			pass
+			print "not adding default script"
+		else:
+			print "creating default script"
 			scriptNode = Gaffer.ScriptNode()
 			Gaffer.NodeAlgo.applyUserDefaults( scriptNode )
 			self.root()["scripts"].addChild( scriptNode )
