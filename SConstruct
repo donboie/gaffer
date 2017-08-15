@@ -93,6 +93,10 @@ options.Add(
 )
 
 options.Add(
+	BoolVariable( "DEBUGINFO", "Force release build to include debug info", False )
+)
+
+options.Add(
 	"CXXSTD",
 	"The C++ standard to build against.",
 	"c++98",
@@ -384,7 +388,11 @@ env.Append( CXXFLAGS = [ "-std=$CXXSTD" ] )
 if env["DEBUG"] :
 	env.Append( CXXFLAGS = [ "-g", "-O0" ] )
 else :
-	env.Append( CXXFLAGS = [ "-DNDEBUG", "-DBOOST_DISABLE_ASSERTS" , "-O3" ] )
+	cxxFlags  = [ "-DNDEBUG", "-DBOOST_DISABLE_ASSERTS" , "-O3" ]
+	if env["DEBUGINFO"] :
+		cxxFlags.append("-g")
+
+	env.Append( CXXFLAGS = cxxFlags )
 
 if env["BUILD_CACHEDIR"] != "" :
 	CacheDir( env["BUILD_CACHEDIR"] )
