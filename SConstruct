@@ -809,6 +809,26 @@ libraries = {
 
 	"GafferTractorUITest" : {},
 
+	"GafferVDB" : {
+		"envAppends" : {
+			"LIBS" : [ "Gaffer", "GafferScene", "Half", "openvdb" ],
+		},
+		"pythonEnvAppends" : {
+			"LIBS" : [ "GafferScene", "GafferVDB", "openvdb" ],
+		}
+	},
+
+	"GafferVDBUI" : {
+		"envAppends" : {
+			"LIBS" : [ "Gaffer", "GafferScene", "GafferSceneUI", "IECoreGL$CORTEX_LIB_SUFFIX", "GafferVDB", "openvdb" ],
+		},
+		"pythonEnvAppends" : {
+			"LIBS" : [ "GafferScene", "GafferVDB", "GafferVDBUI", "openvdb" ],
+		}
+	},
+
+	"GafferVDBTest" : {},
+
 	"apps" : {
 		"additionalFiles" : glob.glob( "apps/*/*-1.py" ),
 	},
