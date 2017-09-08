@@ -34,7 +34,7 @@
 #
 ##########################################################################
 
-from VDBSceneTest import VDBSceneTest
+from SceneInterfaceTest import SceneInterfaceTest
 
 if __name__ == "__main__":
 	import unittest

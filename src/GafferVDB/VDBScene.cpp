@@ -32,14 +32,19 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
+
+#include "openvdb/openvdb.h"
+
 #include "IECore/SceneInterface.h"
 
 #include "GafferVDB/TypeIds.h"
+#include "GafferVDB/VDBObject.h"
 
 using namespace Imath;
 using namespace IECore;
 using namespace GafferVDB;
 
+using namespace openvdb;
 namespace
 {
 
@@ -51,112 +56,138 @@ class VDBScene : public SceneInterface
 		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( VDBScene, VDBSceneTypeId, IECore::SceneInterface );
 
 		VDBScene( const std::string &fileName, IndexedIO::OpenMode openMode )
+		: SceneInterface(),
+          m_fileName(fileName)
+		{
+			// todo check if it's invalid to call this multiple times or is a performance hazard
+			openvdb::initialize();
+
+			io::File file( fileName );
+			file.open();
+
+			m_grids = file.readAllGridMetadata();
+			m_metaData = file.getMetadata();
+		}
+
+		~VDBScene() override
 		{
 		}
 
-		virtual ~VDBScene()
+		std::string fileName() const override
 		{
+			return m_fileName;
 		}
 
-		virtual std::string fileName() const
+		Name name() const override
 		{
-			return "";
+			return Name("/");
 		}
 
-		virtual Name name() const;
-		virtual void path( Path &p ) const;
+		void path( Path &p ) const override
+		{
+			p = Path();
+		}
 
 		////////////////////////////////////////////////////
 		// Bounds
 		////////////////////////////////////////////////////
 
-		virtual Imath::Box3d readBound( double time ) const
+		Imath::Box3d readBound( double time ) const override
 		{
 			return Box3d();
 		}
 
-		virtual void writeBound( const Imath::Box3d &bound, double time );
+		 void writeBound( const Imath::Box3d &bound, double time ) override
+		 {
+			 throw IECore::NotImplementedException("");
+		 }
 
 		////////////////////////////////////////////////////
 		// Transforms
 		////////////////////////////////////////////////////
 
-		virtual ConstDataPtr readTransform( double time ) const
+		ConstDataPtr readTransform( double time ) const override
 		{
-			return NULL;
+			return nullptr;
 		}
 
-		virtual Imath::M44d readTransformAsMatrix( double time ) const
+		Imath::M44d readTransformAsMatrix( double time ) const override
 		{
 			return M44d();
 		}
 
-		virtual void writeTransform( const Data *transform, double time )
+		void writeTransform( const Data *transform, double time ) override
 		{
-
+			throw IECore::NotImplementedException("");
 		}
 
 		////////////////////////////////////////////////////
 		// Attributes
 		////////////////////////////////////////////////////
 
-		virtual bool hasAttribute( const Name &name ) const
+		bool hasAttribute( const Name &name ) const override
 		{
 			return false;
 		}
 
 		/// Fills attrs with the names of all attributes available in the current directory
-		virtual void attributeNames( NameList &attrs ) const
+		void attributeNames( NameList &attrs ) const override
 		{
+			attrs = {};
 		}
 
-		virtual ConstObjectPtr readAttribute( const Name &name, double time ) const
+		ConstObjectPtr readAttribute( const Name &name, double time ) const override
 		{
-			return NULL;
+			return nullptr;
 		}
 
-		virtual void writeAttribute( const Name &name, const Object *attribute, double time )
+		void writeAttribute( const Name &name, const Object *attribute, double time ) override
 		{
+			throw IECore::NotImplementedException("");
 		}
 
 		////////////////////////////////////////////////////
 		// Tags
 		////////////////////////////////////////////////////
 
-		virtual bool hasTag( const Name &name, int filter = LocalTag ) const
+		bool hasTag( const Name &name, int filter = LocalTag ) const override
 		{
 			return false;
 		}
 
-		virtual void readTags( NameList &tags, int filter = LocalTag ) const
+		void readTags( NameList &tags, int filter = LocalTag ) const override
 		{
+			tags = {};
 		}
 
-		virtual void writeTags( const NameList &tags )
+		void writeTags( const NameList &tags ) override
 		{
+			throw IECore::NotImplementedException("");
 		}
 
 		////////////////////////////////////////////////////
 		// Objects
 		////////////////////////////////////////////////////
 
-		virtual bool hasObject() const
+		bool hasObject() const override
 		{
-			return false;
+			return true;
 		}
 
-		virtual ConstObjectPtr readObject( double time ) const
+		ConstObjectPtr readObject( double time ) const override
 		{
-			return NULL;
+			VDBObject::Ptr ptr = new VDBObject(m_grids->at(0));
+			return ptr;
 		}
 
-		virtual PrimitiveVariableMap readObjectPrimitiveVariables( const std::vector<InternedString> &primVarNames, double time ) const
+		PrimitiveVariableMap readObjectPrimitiveVariables( const std::vector<InternedString> &primVarNames, double time ) const override
 		{
 			return PrimitiveVariableMap();
 		}
 
-		virtual void writeObject( const Object *object, double time )
+		void writeObject( const Object *object, double time ) override
 		{
+			throw IECore::NotImplementedException("");
 		}
 
 		////////////////////////////////////////////////////
@@ -164,38 +195,91 @@ class VDBScene : public SceneInterface
 		////////////////////////////////////////////////////
 
 		/// Convenience method to determine if a child exists
-		virtual bool hasChild( const Name &name ) const;
+		bool hasChild( const Name &name ) const override
+		{
+			return false;
+		}
 		/// Queries the names of any existing children of path() within
 		/// the scene.
-		virtual void childNames( NameList &childNames ) const;
+		void childNames( NameList &childNames ) const override
+		{
+			childNames = NameList();
+		}
 		/// Returns an object for the specified child location in the scene.
 		/// If the child does not exist then it will behave according to the
 		/// missingBehavior parameter. May throw and exception, may return a NULL pointer,
 		/// or may create the child (if that is possible).
 		/// Bounding boxes will be automatically propagated up from the children
 		/// to the parent as it is written.
-		virtual SceneInterfacePtr child( const Name &name, MissingBehaviour missingBehaviour = ThrowIfMissing );
+		SceneInterfacePtr child( const Name &name, MissingBehaviour missingBehaviour = ThrowIfMissing ) override
+		{
+			if (missingBehaviour == ThrowIfMissing)
+			{
+				throw IECore::InvalidArgumentException("VDBSCene::child(): no child called \" + name.string()");
+			}
+			else if (missingBehaviour == CreateIfMissing)
+			{
+				throw IECore::InvalidArgumentException("VDBScene::child(): CreateIfMissing not supported");
+			}
+
+			return SceneInterfacePtr();
+		}
 		/// Returns a read-only interface for a child location in the scene.
-		virtual ConstSceneInterfacePtr child( const Name &name, MissingBehaviour missingBehaviour = ThrowIfMissing ) const;
+		ConstSceneInterfacePtr child( const Name &name, MissingBehaviour missingBehaviour = ThrowIfMissing ) const override
+		{
+			if (missingBehaviour == ThrowIfMissing)
+			{
+				throw IECore::InvalidArgumentException("VDBSCene::child(): no child called \" + name.string()");
+			}
+			else if (missingBehaviour == CreateIfMissing)
+			{
+				throw IECore::NotImplementedException("VDBScene::child(): CreateIfMissing not supported");
+			}
+
+			return SceneInterfacePtr();
+		}
 		/// Returns a writable interface to a new child. Throws an exception if it already exists.
 		/// Bounding boxes will be automatically propagated up from the children
 		/// to the parent as it is written.
-		virtual SceneInterfacePtr createChild( const Name &name );
+		SceneInterfacePtr createChild( const Name &name ) override
+		{
+			throw IECore::NotImplementedException("");
+		}
 		/// Returns a interface for querying the scene at the given path (full path).
-		virtual SceneInterfacePtr scene( const Path &path, MissingBehaviour missingBehaviour = ThrowIfMissing );
+		SceneInterfacePtr scene( const Path &path, MissingBehaviour missingBehaviour = ThrowIfMissing ) override
+		{
+			throw IECore::InvalidArgumentException("");
+		}
 		/// Returns a const interface for querying the scene at the given path (full path).
-		virtual ConstSceneInterfacePtr scene( const Path &path, MissingBehaviour missingBehaviour = ThrowIfMissing ) const;
+		ConstSceneInterfacePtr scene( const Path &path, MissingBehaviour missingBehaviour = ThrowIfMissing ) const override
+		{
+			throw IECore::InvalidArgumentException("");
+		}
 
 		////////////////////////////////////////////////////
 		// Hash
 		////////////////////////////////////////////////////
 
-		virtual void hash( HashType hashType, double time, MurmurHash &h ) const;
+		void hash( HashType hashType, double time, MurmurHash &h ) const override
+		{
+
+		}
 
 	private :
 
-		static FileFormatDescription<VDBScene> g_description;//( "vdb", IndexedIO::Read );
+		static FileFormatDescription<VDBScene> g_description;
+
+		openvdb::GridPtrVecPtr m_grids;
+		openvdb::MetaMap::Ptr m_metaData;
+		std::string m_fileName;
+
+		Ptr m_parent;
 
 };
+
+
+SceneInterface::FileFormatDescription<VDBScene> VDBScene::g_description(".vdb", IndexedIO::Read );
+
+
 
 } // namespace
