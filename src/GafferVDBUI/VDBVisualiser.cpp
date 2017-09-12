@@ -34,6 +34,8 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
+#include "openvdb/openvdb.h"
+
 #include "IECoreGL/CurvesPrimitive.h"
 #include "IECoreGL/Group.h"
 
@@ -49,6 +51,121 @@ using namespace GafferVDB;
 namespace
 {
 
+
+template<typename GridType>
+void extract(typename GridType::ConstPtr grid, std::vector<V3f>& positions, std::vector<int>& vertsPerCurve, openvdb::Index64 depth = 3)
+{
+	using openvdb::Index64;
+
+//	Index getDepth() const { return ROOT_LEVEL - mLevel; }
+//	static Index getLeafDepth() { return LEAF_DEPTH; }
+
+	openvdb::Vec3d ptn;
+	openvdb::CoordBBox bbox;
+
+	std::vector<V3f> boundPositions(8);
+
+	for (typename GridType::TreeType::NodeCIter iter = grid->tree().cbeginNode(); iter; ++iter)
+	{
+		int boundIndex = 0;
+		iter.getBoundingBox(bbox);
+
+		if (iter.getDepth() != depth)
+		{
+			continue;
+		}
+
+		// Nodes are rendered as cell-centered
+		const openvdb::Vec3d min(bbox.min().x()-0.5, bbox.min().y()-0.5, bbox.min().z()-0.5);
+		const openvdb::Vec3d max(bbox.max().x()+0.5, bbox.max().y()+0.5, bbox.max().z()+0.5);
+
+		// corner 1
+		ptn = grid->indexToWorld(min);
+		boundPositions[boundIndex++] = V3f(ptn[0], ptn[1], ptn[2]);
+
+		// corner 2
+		ptn = openvdb::Vec3d(min.x(), min.y(), max.z());
+		ptn = grid->indexToWorld(ptn);
+		boundPositions[boundIndex++] = V3f(ptn[0], ptn[1], ptn[2]);
+
+		// corner 3
+		ptn = openvdb::Vec3d(max.x(), min.y(), max.z());
+		ptn = grid->indexToWorld(ptn);
+		boundPositions[boundIndex++] = V3f(ptn[0], ptn[1], ptn[2]);
+
+		// corner 4
+		ptn = openvdb::Vec3d(max.x(), min.y(), min.z());
+		ptn = grid->indexToWorld(ptn);
+		boundPositions[boundIndex++] = V3f(ptn[0], ptn[1], ptn[2]);
+
+		// corner 5
+		ptn = openvdb::Vec3d(min.x(), max.y(), min.z());
+		ptn = grid->indexToWorld(ptn);
+		boundPositions[boundIndex++] = V3f(ptn[0], ptn[1], ptn[2]);
+
+		// corner 6
+		ptn = openvdb::Vec3d(min.x(), max.y(), max.z());
+		ptn = grid->indexToWorld(ptn);
+		boundPositions[boundIndex++] = V3f(ptn[0], ptn[1], ptn[2]);
+
+		// corner 7
+		ptn = grid->indexToWorld(max);
+		boundPositions[boundIndex++] = V3f(ptn[0], ptn[1], ptn[2]);
+
+		// corner 8
+		ptn = openvdb::Vec3d(max.x(), max.y(), min.z());
+		ptn = grid->indexToWorld(ptn);
+		boundPositions[boundIndex++] = V3f(ptn[0], ptn[1], ptn[2]);
+
+		for (size_t i = 0; i < 12; ++i)
+		{
+			vertsPerCurve.push_back(2);
+		}
+
+		positions.push_back(boundPositions[0]);
+		positions.push_back(boundPositions[1]);
+
+		positions.push_back(boundPositions[1]);
+		positions.push_back(boundPositions[2]);
+
+		positions.push_back(boundPositions[2]);
+		positions.push_back(boundPositions[3]);
+
+		positions.push_back(boundPositions[3]);
+		positions.push_back(boundPositions[0]);
+
+		//
+
+		positions.push_back(boundPositions[4]);
+		positions.push_back(boundPositions[5]);
+
+		positions.push_back(boundPositions[5]);
+		positions.push_back(boundPositions[6]);
+
+		positions.push_back(boundPositions[6]);
+		positions.push_back(boundPositions[7]);
+
+		positions.push_back(boundPositions[7]);
+		positions.push_back(boundPositions[4]);
+
+		//
+
+		positions.push_back(boundPositions[0]);
+		positions.push_back(boundPositions[4]);
+
+		positions.push_back(boundPositions[1]);
+		positions.push_back(boundPositions[5]);
+
+		positions.push_back(boundPositions[2]);
+		positions.push_back(boundPositions[6]);
+
+		positions.push_back(boundPositions[3]);
+		positions.push_back(boundPositions[7]);
+
+
+
+	}
+}
 class VDBVisualiser : public ObjectVisualiser
 {
 
@@ -90,7 +207,42 @@ class VDBVisualiser : public ObjectVisualiser
 
 		virtual IECoreGL::ConstRenderablePtr visualise( const IECore::Object *object ) const
 		{
-			return m_group;
+			const VDBObject* vdbObject = IECore::runTimeCast<const VDBObject>(object);
+			if ( !vdbObject )
+			{
+				return m_group;
+			}
+
+			openvdb::GridBase::ConstPtr grid = vdbObject->grid();
+
+			IECoreGL::Group *rootGroup = new IECoreGL::Group();
+
+			static std::vector<Color4f> colors = { Color4f( 0.56, 0.06, 0.2, 0.2 ), Color4f( 0.06, 0.56, 0.2, 0.2 ), Color4f( 0.06, 0.2, 0.56, 0.2 ), Color4f( 0.6, 0.6, 0.6, 0.2 ) };
+			for (openvdb::Index64 depth = 0; depth < 4; ++depth)
+			{
+				IECoreGL::Group *group = new IECoreGL::Group();
+
+				group->getState()->add( new IECoreGL::Primitive::DrawWireframe( true ) );
+				group->getState()->add( new IECoreGL::Primitive::DrawSolid( false ) );
+				group->getState()->add( new IECoreGL::CurvesPrimitive::UseGLLines( true ) );
+				group->getState()->add( new IECoreGL::WireframeColorStateComponent( colors[depth] ) );
+				group->getState()->add( new IECoreGL::CurvesPrimitive::GLLineWidth( 0.5f ) );
+
+				IECore::V3fVectorDataPtr pData = new IECore::V3fVectorData;
+				vector<V3f> &p = pData->writable();
+
+				IECore::IntVectorDataPtr vertsPerCurve = new IECore::IntVectorData;
+				vector<int> &topology = vertsPerCurve->writable();
+
+				extract<openvdb::FloatGrid>( openvdb::GridBase::constGrid<openvdb::FloatGrid>( grid ), p, topology, depth);
+
+				IECoreGL::CurvesPrimitivePtr curves = new IECoreGL::CurvesPrimitive( IECore::CubicBasisf::linear(), false, vertsPerCurve );
+				curves->addPrimitiveVariable( "P", IECore::PrimitiveVariable( IECore::PrimitiveVariable::Vertex, pData ) );
+				group->addChild( curves );
+
+				rootGroup->addChild( group );
+			}
+			return rootGroup;
 		}
 
 	protected :
