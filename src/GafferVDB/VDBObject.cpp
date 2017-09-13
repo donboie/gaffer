@@ -33,7 +33,7 @@
 //////////////////////////////////////////////////////////////////////////
 
 #include "IECore/Exception.h"
-
+#include "IECore/MurmurHash.h"
 #include "GafferVDB/VDBObject.h"
 
 using namespace IECore;
