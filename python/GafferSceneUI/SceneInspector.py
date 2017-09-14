@@ -48,6 +48,7 @@ import Gaffer
 import GafferScene
 import GafferUI
 import GafferSceneUI
+import GafferVDB
 
 class SceneInspector( GafferUI.NodeSetEditor ) :
 
@@ -1631,6 +1632,11 @@ class __ObjectSection( LocationSection ) :
 				label = "Primitive Variables"
 			)
 
+			DiffColumn(
+				self.__VDBObjectInspector(),
+				label = "VDB"
+			)
+
 	def update( self, targets ) :
 
 		LocationSection.update( self, targets )
@@ -1750,6 +1756,34 @@ class __ObjectSection( LocationSection ) :
 				return object.parameters
 
 			return None
+
+	class __VDBObjectInspector( Inspector ) :
+		def __init__( self ) :
+			Inspector.__init__(self)
+
+		def name( self ) :
+			return "VDB"
+
+		def __call__(self, target):
+			if target.path is None:
+				return None
+
+			object = target.object()
+			if not isinstance( object, GafferVDB.VDBObject ):
+				return None
+
+			return ""
+
+		def children ( self, target ) :
+
+			if target.path is None :
+				return []
+
+			object = target.object()
+			if not isinstance( object, GafferVDB.VDBObject ) :
+				return []
+
+			return []
 
 	class __PrimitiveVariablesInspector( Inspector ) :
 

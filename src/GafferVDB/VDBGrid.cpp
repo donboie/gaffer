@@ -52,6 +52,11 @@ VDBGrid::~VDBGrid()
 {
 }
 
+IECore::CompoundObjectPtr VDBGrid::metadata() const
+{
+	return new IECore::CompoundObject();
+}
+
 openvdb::GridBase::Ptr VDBGrid::grid()
 {
 	return m_grid;

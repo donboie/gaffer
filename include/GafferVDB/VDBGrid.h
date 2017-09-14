@@ -40,6 +40,7 @@
 #include "openvdb/Grid.h"
 
 #include "IECore/Object.h"
+#include "IECore/CompoundObject.h"
 
 #include "GafferVDB/TypeIds.h"
 
@@ -54,6 +55,8 @@ class VDBGrid : public IECore::Object
 		VDBGrid( openvdb::GridBase::Ptr grid = openvdb::GridBase::Ptr() );
 
 		IE_CORE_DECLAREEXTENSIONOBJECT( GafferVDB::VDBGrid, VDBGridTypeId, IECore::Object );
+
+		IECore::CompoundObjectPtr metadata() const;
 
 		openvdb::GridBase::Ptr grid();
 		openvdb::GridBase::ConstPtr grid() const;

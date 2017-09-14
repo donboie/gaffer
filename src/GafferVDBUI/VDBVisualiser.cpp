@@ -213,7 +213,14 @@ class VDBVisualiser : public ObjectVisualiser
 				return m_group;
 			}
 
-			GafferVDB::VDBGrid::Ptr grid = vdbObject->grid("density");
+			std::vector<std::string> names = vdbObject->gridNames();
+
+			if (names.empty())
+			{
+				return m_group;
+			}
+
+			GafferVDB::VDBGrid::Ptr grid = vdbObject->grid(names[0]);
 
 			openvdb::GridBase::ConstPtr vdbgrid = grid->grid();
 

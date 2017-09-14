@@ -60,6 +60,8 @@ class VDBObject : public IECore::Object
 
 		VDBGrid::Ptr grid(const std::string& name) const;
 
+		std::vector<std::string> gridNames() const;
+
 	protected :
 
 		virtual ~VDBObject();

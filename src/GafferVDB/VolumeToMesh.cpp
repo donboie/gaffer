@@ -240,7 +240,12 @@ IECore::ConstObjectPtr VolumeToMesh::computeProcessedObject( const ScenePath &pa
 		return inputObject;
 	}
 
-	GafferVDB::VDBGrid::Ptr grid = vdbObject->grid("density");
+	std::vector<std::string> gridNames = vdbObject->gridNames();
+
+	if (gridNames.empty())
+		return inputObject;
+
+	GafferVDB::VDBGrid::Ptr grid = vdbObject->grid(gridNames[0]);
 
 	if (!grid)
 	{

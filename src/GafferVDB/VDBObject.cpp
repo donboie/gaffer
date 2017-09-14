@@ -60,6 +60,11 @@ VDBObject::~VDBObject()
 void VDBObject::copyFrom( const Object *other, CopyContext *context )
 {
 	Object::copyFrom( other, context );
+
+	const VDBObject *otherVDBObject = static_cast<const VDBObject *>( other );
+
+	m_grids = otherVDBObject->m_grids->copy();
+
 }
 
 bool VDBObject::isEqualTo( const Object *other ) const
@@ -104,4 +109,15 @@ VDBGrid::Ptr VDBObject::grid(const std::string& name) const
 		return VDBGrid::Ptr();
 
 	return IECore::runTimeCast<VDBGrid>( it->second );
+}
+
+
+std::vector<std::string> VDBObject::gridNames() const
+{
+	std::vector<std::string> outputGridNames;
+	for(const auto &g : m_grids->members())
+	{
+		outputGridNames.push_back(runTimeCast<VDBGrid>(g.second)->grid()->getName());
+	}
+	return outputGridNames;
 }

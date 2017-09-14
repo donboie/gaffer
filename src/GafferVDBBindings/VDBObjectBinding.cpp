@@ -49,7 +49,10 @@ namespace GafferVDBBindings
 void bindVDBObject()
 {
 
-	IECorePython::RunTimeTypedClass<VDBObject>();
+	IECorePython::RunTimeTypedClass<VDBObject>()
+		.def("grid", &VDBObject::grid)
+		.def("gridNames", &VDBObject::gridNames)
+	;
 
 }
 
