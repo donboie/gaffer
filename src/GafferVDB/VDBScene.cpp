@@ -206,8 +206,15 @@ class VDBScene : public SceneInterface
 		{
 			if ( m_parent )
 			{
-				rootData().m_grids->at(0)->readNonresidentBuffers();
-				return  new VDBObject( rootData().m_grids->at(0) );
+
+				IECore::CompoundObjectPtr grids = new IECore::CompoundObject();
+				for (auto grid : *rootData().m_grids)
+				{
+					std::string gridName = grid->getName();
+					grids->members()[gridName] = new GafferVDB::VDBGrid( grid );
+				}
+
+				return new VDBObject( grids );
 			}
 			else
 			{

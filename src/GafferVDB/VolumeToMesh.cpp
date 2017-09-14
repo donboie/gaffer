@@ -40,6 +40,7 @@
 #include "IECore/MeshPrimitive.h"
 
 #include "GafferVDB/VDBObject.h"
+#include "GafferVDB/VDBGrid.h"
 #include "GafferVDB/VolumeToMesh.h"
 
 using namespace std;
@@ -239,5 +240,13 @@ IECore::ConstObjectPtr VolumeToMesh::computeProcessedObject( const ScenePath &pa
 		return inputObject;
 	}
 
-	return volumeToMesh( vdbObject->grid(), isoValuePlug()->getValue(), adaptivityPlug()->getValue() );
+	GafferVDB::VDBGrid::Ptr grid = vdbObject->grid("density");
+
+	if (!grid)
+	{
+		return inputObject;
+	}
+
+
+	return volumeToMesh( grid->grid(), isoValuePlug()->getValue(), adaptivityPlug()->getValue() );
 }

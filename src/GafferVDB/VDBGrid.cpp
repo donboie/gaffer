@@ -1,6 +1,6 @@
 //////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (c) 2015, John Haddon. All rights reserved.
+//  Copyright (c) 2015, Image Engine. All rights reserved.
 //
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
@@ -34,74 +34,79 @@
 
 #include "IECore/Exception.h"
 #include "IECore/MurmurHash.h"
-#include "GafferVDB/VDBObject.h"
+#include "GafferVDB/VDBGrid.h"
 
 using namespace IECore;
 using namespace GafferVDB;
 
-IE_CORE_DEFINEOBJECTTYPEDESCRIPTION( VDBObject );
+IE_CORE_DEFINEOBJECTTYPEDESCRIPTION( VDBGrid );
 
-const unsigned int VDBObject::m_ioVersion = 0;
+const unsigned int VDBGrid::m_ioVersion = 0;
 
-VDBObject::VDBObject()
-{
-
-}
-
-VDBObject::VDBObject(CompoundObjectPtr grids)
-: m_grids (grids)
+VDBGrid::VDBGrid( openvdb::GridBase::Ptr grid )
+	:	m_grid( grid )
 {
 }
 
-VDBObject::~VDBObject()
+VDBGrid::~VDBGrid()
 {
 }
 
-void VDBObject::copyFrom( const Object *other, CopyContext *context )
+openvdb::GridBase::Ptr VDBGrid::grid()
+{
+	return m_grid;
+}
+
+openvdb::GridBase::ConstPtr VDBGrid::grid() const
+{
+	return m_grid;
+}
+
+void VDBGrid::copyFrom( const Object *other, CopyContext *context )
 {
 	Object::copyFrom( other, context );
+	const VDBGrid *otherVDBGrid = static_cast<const VDBGrid *>( other );
+	if( !otherVDBGrid->m_grid )
+	{
+		m_grid.reset();
+	}
+	else
+	{
+		m_grid = otherVDBGrid->m_grid->deepCopyGrid();
+	}
 }
 
-bool VDBObject::isEqualTo( const Object *other ) const
+bool VDBGrid::isEqualTo( const Object *other ) const
 {
-	return Object::isEqualTo( other );
+	if( !Object::isEqualTo( other ) )
+	{
+		return false;
+	}
+
+	const VDBGrid *otherVDBGrid = static_cast<const VDBGrid *>( other );
+	return m_grid == otherVDBGrid->m_grid;
 }
 
-void VDBObject::save( SaveContext *context ) const
+void VDBGrid::save( SaveContext *context ) const
 {
 	Object::save( context );
-	throw IECore::NotImplementedException( "VDBObject::save" );
+	throw IECore::NotImplementedException( "VDBGrid::save" );
 }
 
-void VDBObject::load( LoadContextPtr context )
+void VDBGrid::load( LoadContextPtr context )
 {
 	Object::load( context );
-	throw IECore::NotImplementedException( "VDBObject::load" );
+	throw IECore::NotImplementedException( "VDBGrid::load" );
 }
 
-void VDBObject::memoryUsage( Object::MemoryAccumulator &a ) const
+void VDBGrid::memoryUsage( Object::MemoryAccumulator &a ) const
 {
 	Object::memoryUsage( a );
-
-	for (auto i  : m_grids->members())
-	{
-		a.accumulate( i.second.get() );
-	};
+	a.accumulate( m_grid->memUsage() );
 }
 
-void VDBObject::hash( MurmurHash &h ) const
+void VDBGrid::hash( MurmurHash &h ) const
 {
 	Object::hash( h );
-	throw IECore::NotImplementedException( "VDBObject::hash" );
-}
-
-
-VDBGrid::Ptr VDBObject::grid(const std::string& name) const
-{
-	const auto& it = m_grids->members().find( name );
-
-	if (it == m_grids->members().end())
-		return VDBGrid::Ptr();
-
-	return IECore::runTimeCast<VDBGrid>( it->second );
+	throw IECore::NotImplementedException( "VDBGrid::hash" );
 }

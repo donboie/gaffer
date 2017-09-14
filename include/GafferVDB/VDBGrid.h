@@ -1,6 +1,6 @@
 //////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (c) 2015, John Haddon. All rights reserved.
+//  Copyright (c) 2015, Image Engine. All rights reserved.
 //
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
@@ -15,7 +15,7 @@
 //        disclaimer in the documentation and/or other materials provided with
 //        the distribution.
 //
-//      * Neither the name of John Haddon nor the names of
+//      * Neither the name of Image Engine nor the names of
 //        any other contributors to this software may be used to endorse or
 //        promote products derived from this software without specific prior
 //        written permission.
@@ -34,27 +34,42 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/python.hpp"
+#ifndef GAFFERVDB_VDBGRID_H
+#define GAFFERVDB_VDBGRID_H
 
-#include "GafferBindings/DependencyNodeBinding.h"
+#include "openvdb/Grid.h"
 
-#include "GafferVDB/MeshToVDB.h"
-#include "GafferVDB/VolumeToMesh.h"
+#include "IECore/Object.h"
 
-#include "GafferVDBBindings/VDBObjectBinding.h"
-#include "GafferVDBBindings/VDBGridBinding.h"
+#include "GafferVDB/TypeIds.h"
 
-using namespace boost::python;
-using namespace GafferVDB;
-using namespace GafferVDBBindings;
-
-BOOST_PYTHON_MODULE( _GafferVDB )
+namespace GafferVDB
 {
 
-	bindVDBObject();
-	bindVDBGrid();
+class VDBGrid : public IECore::Object
+{
 
-	GafferBindings::DependencyNodeClass<MeshToVDB>();
-	GafferBindings::DependencyNodeClass<VolumeToMesh>();
+	public :
 
-}
+		VDBGrid( openvdb::GridBase::Ptr grid = openvdb::GridBase::Ptr() );
+
+		IE_CORE_DECLAREEXTENSIONOBJECT( GafferVDB::VDBGrid, VDBGridTypeId, IECore::Object );
+
+		openvdb::GridBase::Ptr grid();
+		openvdb::GridBase::ConstPtr grid() const;
+
+	protected :
+
+		virtual ~VDBGrid();
+
+	private :
+
+		static const unsigned int m_ioVersion;
+
+		openvdb::GridBase::Ptr m_grid;
+
+};
+
+} // namespace GafferVDB
+
+#endif // GAFFERVDB_VDBGRID_H

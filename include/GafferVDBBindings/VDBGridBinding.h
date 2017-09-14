@@ -1,6 +1,6 @@
 //////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (c) 2015, John Haddon. All rights reserved.
+//  Copyright (c) 2015, Image Engine. All rights reserved.
 //
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
@@ -15,7 +15,7 @@
 //        disclaimer in the documentation and/or other materials provided with
 //        the distribution.
 //
-//      * Neither the name of John Haddon nor the names of
+//      * Neither the name of Image Engine nor the names of
 //        any other contributors to this software may be used to endorse or
 //        promote products derived from this software without specific prior
 //        written permission.
@@ -34,27 +34,14 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/python.hpp"
+#ifndef GAFFERVDBBINDINGS_VDBGRIDBINDING_H
+#define GAFFERVDBBINDINGS_VDBGRIDBINDING_H
 
-#include "GafferBindings/DependencyNodeBinding.h"
-
-#include "GafferVDB/MeshToVDB.h"
-#include "GafferVDB/VolumeToMesh.h"
-
-#include "GafferVDBBindings/VDBObjectBinding.h"
-#include "GafferVDBBindings/VDBGridBinding.h"
-
-using namespace boost::python;
-using namespace GafferVDB;
-using namespace GafferVDBBindings;
-
-BOOST_PYTHON_MODULE( _GafferVDB )
+namespace GafferVDBBindings
 {
 
-	bindVDBObject();
-	bindVDBGrid();
+void bindVDBGrid();
 
-	GafferBindings::DependencyNodeClass<MeshToVDB>();
-	GafferBindings::DependencyNodeClass<VolumeToMesh>();
+} // namespace GafferVDBBindings
 
-}
+#endif // GAFFERVDBBINDINGS_VDBGRIDBINDING_H

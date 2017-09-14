@@ -187,7 +187,10 @@ IECore::ConstObjectPtr MeshToVDB::computeProcessedObject( const ScenePath &path,
 		//primitiveIndexGrid.get()
 	);
 
-	return new VDBObject( grid );
+	IECore::CompoundObjectPtr gridCompound = new IECore::CompoundObject();
+	gridCompound->members()["density"] = new GafferVDB::VDBGrid ( grid );
+
+	return new VDBObject( gridCompound );
 }
 
 

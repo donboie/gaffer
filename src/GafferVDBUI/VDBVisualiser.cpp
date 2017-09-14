@@ -213,7 +213,9 @@ class VDBVisualiser : public ObjectVisualiser
 				return m_group;
 			}
 
-			openvdb::GridBase::ConstPtr grid = vdbObject->grid();
+			GafferVDB::VDBGrid::Ptr grid = vdbObject->grid("density");
+
+			openvdb::GridBase::ConstPtr vdbgrid = grid->grid();
 
 			IECoreGL::Group *rootGroup = new IECoreGL::Group();
 
@@ -234,7 +236,7 @@ class VDBVisualiser : public ObjectVisualiser
 				IECore::IntVectorDataPtr vertsPerCurve = new IECore::IntVectorData;
 				vector<int> &topology = vertsPerCurve->writable();
 
-				extract<openvdb::FloatGrid>( openvdb::GridBase::constGrid<openvdb::FloatGrid>( grid ), p, topology, depth);
+				extract<openvdb::FloatGrid>( openvdb::GridBase::constGrid<openvdb::FloatGrid>( vdbgrid ), p, topology, depth);
 
 				IECoreGL::CurvesPrimitivePtr curves = new IECoreGL::CurvesPrimitive( IECore::CubicBasisf::linear(), false, vertsPerCurve );
 				curves->addPrimitiveVariable( "P", IECore::PrimitiveVariable( IECore::PrimitiveVariable::Vertex, pData ) );
