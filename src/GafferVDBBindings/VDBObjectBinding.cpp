@@ -43,6 +43,19 @@
 using namespace boost::python;
 using namespace GafferVDB;
 
+namespace
+{
+	boost::python::list gridNames(VDBObject::Ptr vdbObject)
+	{
+		boost::python::list result;
+		std::vector<std::string> names = vdbObject->gridNames();
+		for (const auto& name : names)
+		{
+			result.append( name );
+		}
+		return result;
+	}
+}
 namespace GafferVDBBindings
 {
 
@@ -51,7 +64,7 @@ void bindVDBObject()
 
 	IECorePython::RunTimeTypedClass<VDBObject>()
 		.def("grid", &VDBObject::grid)
-		.def("gridNames", &VDBObject::gridNames)
+		.def("gridNames", &::gridNames)
 	;
 
 }
