@@ -115,10 +115,8 @@ class VDBScene : public SceneInterface
 			for ( auto gridIt = grids->begin(); gridIt != grids->end(); ++gridIt)
 			{
 				GridBase::Ptr gridPtr = *gridIt;
-				std::cout << "grid name: " << gridPtr->getName() << std::endl;
 
-
-				Imath::Box3d bounds = getBounds( gridPtr );
+				Imath::Box3d bounds = getBounds<double>( gridPtr );
 				combinedBounds.extendBy(bounds);
 			}
 
@@ -260,7 +258,6 @@ class VDBScene : public SceneInterface
 				childNames = { g_objectName };
 			}
 
-			std::cout << "childnames size: " << childNames.size() << std::endl;
 		}
 		/// Returns an object for the specified child location in the scene.
 		/// If the child does not exist then it will behave according to the

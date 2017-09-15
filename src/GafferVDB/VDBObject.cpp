@@ -35,6 +35,9 @@
 #include "IECore/Exception.h"
 #include "IECore/MurmurHash.h"
 #include "GafferVDB/VDBObject.h"
+#include "GafferVDB/VDBUtil.h"
+
+#include "openvdb/openvdb.h"
 
 using namespace IECore;
 using namespace GafferVDB;
@@ -97,7 +100,7 @@ void VDBObject::memoryUsage( Object::MemoryAccumulator &a ) const
 void VDBObject::hash( MurmurHash &h ) const
 {
 	Object::hash( h );
-	throw IECore::NotImplementedException( "VDBObject::hash" );
+	m_grids->hash( h );
 }
 
 
@@ -120,4 +123,41 @@ std::vector<std::string> VDBObject::gridNames() const
 		outputGridNames.push_back(runTimeCast<VDBGrid>(g.second)->grid()->getName());
 	}
 	return outputGridNames;
+}
+
+Imath::Box3f VDBObject::bound() const
+{
+	std::vector<std::string> names = gridNames();
+
+	Imath::Box3f combinedBounds;
+
+	for (const auto& name : names)
+	{
+		Imath::Box3f gridBounds = getBounds<float>( grid(name)->grid() );
+
+		combinedBounds.extendBy( gridBounds );
+	}
+
+	return combinedBounds;
+}
+
+void VDBObject::render( IECore::Renderer *renderer ) const
+{
+
+}
+
+void VDBObject::write(const std::string& path) const
+{
+	openvdb::io::File file( path );
+
+	openvdb::GridCPtrVec grids;
+
+	std::vector<std::string> names = gridNames();
+	for (const auto& name : names)
+	{
+		grids.push_back(grid(name)->grid());
+	}
+
+	file.write(grids);
+	file.close();
 }

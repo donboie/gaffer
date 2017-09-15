@@ -724,7 +724,7 @@ libraries = {
 		"pythonEnvAppends" : {
 			"CPPPATH" : [ "$ARNOLD_ROOT/include" ],
 			"LIBPATH" : [ "$ARNOLD_ROOT/bin" ],
-			"LIBS" : [ "Gaffer", "GafferScene", "GafferBindings", "GafferDispatch", "GafferArnold" ],
+			"LIBS" : [ "Gaffer", "GafferScene", "GafferBindings", "GafferVDB", "GafferDispatch", "GafferArnold" ],
 		},
 		"requiredOptions" : [ "ARNOLD_ROOT" ],
 		"additionalFiles" : [ "arnold/plugins/gaffer.mtd" ],

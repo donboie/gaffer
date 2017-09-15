@@ -49,7 +49,6 @@ namespace GafferVDB
 
 class VDBGrid : public IECore::Object
 {
-
 	public :
 
 		VDBGrid( openvdb::GridBase::Ptr grid = openvdb::GridBase::Ptr() );
@@ -57,7 +56,6 @@ class VDBGrid : public IECore::Object
 		IE_CORE_DECLAREEXTENSIONOBJECT( GafferVDB::VDBGrid, VDBGridTypeId, IECore::Object );
 
 		IECore::CompoundObjectPtr metadata() const;
-
 		openvdb::GridBase::Ptr grid();
 		openvdb::GridBase::ConstPtr grid() const;
 

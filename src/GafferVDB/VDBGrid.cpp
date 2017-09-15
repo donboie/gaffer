@@ -170,6 +170,7 @@ void VDBGrid::memoryUsage( Object::MemoryAccumulator &a ) const
 
 void VDBGrid::hash( MurmurHash &h ) const
 {
+	static int test = 0;
 	Object::hash( h );
-	throw IECore::NotImplementedException( "VDBGrid::hash" );
+	h.append(test++);
 }

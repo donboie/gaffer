@@ -38,8 +38,10 @@
 #define GAFFERVDB_VDBOBJECT_H
 
 
+#include "ImathBox.h"
 #include "IECore/Object.h"
 #include "IECore/CompoundObject.h"
+#include "IECore/VisibleRenderable.h"
 
 #include "GafferVDB/TypeIds.h"
 #include "GafferVDB/VDBGrid.h"
@@ -47,7 +49,7 @@
 namespace GafferVDB
 {
 
-class VDBObject : public IECore::Object
+class VDBObject : public IECore::VisibleRenderable
 {
 
 	public :
@@ -56,11 +58,15 @@ class VDBObject : public IECore::Object
 
 		VDBObject(IECore::CompoundObjectPtr grids);
 
-		IE_CORE_DECLAREEXTENSIONOBJECT( GafferVDB::VDBObject, VDBObjectTypeId, IECore::Object );
+		IE_CORE_DECLAREEXTENSIONOBJECT( GafferVDB::VDBObject, VDBObjectTypeId, IECore::VisibleRenderable );
 
 		VDBGrid::Ptr grid(const std::string& name) const;
-
 		std::vector<std::string> gridNames() const;
+
+		Imath::Box3f bound() const override;
+		void render( IECore::Renderer *renderer ) const override;
+
+		void write(const std::string& path) const;
 
 	protected :
 
@@ -71,7 +77,6 @@ class VDBObject : public IECore::Object
 		static const unsigned int m_ioVersion;
 
 		IECore::CompoundObjectPtr m_grids;
-
 };
 
 } // namespace GafferVDB
