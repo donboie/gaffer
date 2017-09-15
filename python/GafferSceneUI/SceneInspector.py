@@ -1608,6 +1608,31 @@ SceneInspector.registerSection( __AttributesSection, tab = "Selection" )
 ##########################################################################
 # Object section
 ##########################################################################
+class _VDBGridInspector( Inspector ) :
+
+	def __init__( self, gridName, metadataName ) :
+		Inspector.__init__(self)
+		self.__gridName = gridName
+		self.__metadataName = metadataName
+
+	def name( self ) :
+		return "{0} : {1}".format(self.__gridName, self.__metadataName)
+
+	def __call__(self, target):
+		if target.path is None:
+			return None
+
+		object = target.object()
+		if not isinstance( object, GafferVDB.VDBObject ):
+			return None
+
+		if self.__gridName == None or  self.__metadataName == None:
+			return None
+
+		return object.grid(self.__gridName).metadata()[self.__metadataName]
+
+	def children ( self, target ) :
+		return []
 
 class __ObjectSection( LocationSection ) :
 
@@ -1758,6 +1783,7 @@ class __ObjectSection( LocationSection ) :
 			return None
 
 	class __VDBObjectInspector( Inspector ) :
+
 		def __init__( self ) :
 			Inspector.__init__(self)
 
@@ -1783,7 +1809,14 @@ class __ObjectSection( LocationSection ) :
 			if not isinstance( object, GafferVDB.VDBObject ) :
 				return []
 
-			return []
+			childInspectors = []
+			for gridName in object.gridNames():
+				grid = object.grid(gridName)
+
+				for metadataName in grid.metadata().keys():
+					childInspectors.append(_VDBGridInspector( gridName, metadataName ) )
+
+			return childInspectors
 
 	class __PrimitiveVariablesInspector( Inspector ) :
 
