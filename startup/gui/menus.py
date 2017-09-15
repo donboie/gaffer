@@ -46,6 +46,8 @@ import Gaffer
 import GafferScene
 import GafferUI
 import GafferSceneUI
+import GafferVDB
+import GafferVDBUI
 
 # ScriptWindow menu
 ##########################################################################
