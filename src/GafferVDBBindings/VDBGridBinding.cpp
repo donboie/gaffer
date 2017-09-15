@@ -49,7 +49,9 @@ namespace GafferVDBBindings
 void bindVDBGrid()
 {
 
-	IECorePython::RunTimeTypedClass<VDBGrid>();
+	IECorePython::RunTimeTypedClass<VDBGrid>()
+		.def("metadata", &VDBGrid::metadata)
+		;
 
 }
 

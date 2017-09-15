@@ -35,6 +35,9 @@
 #include "IECore/Exception.h"
 #include "IECore/MurmurHash.h"
 #include "GafferVDB/VDBGrid.h"
+#include "IECore/SimpleTypedData.h"
+
+
 
 using namespace IECore;
 using namespace GafferVDB;
@@ -54,7 +57,62 @@ VDBGrid::~VDBGrid()
 
 IECore::CompoundObjectPtr VDBGrid::metadata() const
 {
-	return new IECore::CompoundObject();
+	CompoundObjectPtr metadata = new CompoundObject();
+
+	for (auto metaIt = m_grid->beginMeta(); metaIt != m_grid->endMeta(); ++metaIt)
+	{
+		openvdb::Metadata::Ptr ptr = metaIt->second;
+
+		if (metaIt->second->typeName() == "string")
+		{
+			openvdb::TypedMetadata<openvdb::Name>::ConstPtr typedPtr = openvdb::DynamicPtrCast<openvdb::TypedMetadata<openvdb::Name> >(ptr);
+
+			if (typedPtr)
+			{
+				StringDataPtr stringData = new StringData();
+				stringData->writable() = typedPtr->value();
+				metadata->members()[metaIt->first] = stringData;
+			}
+		}
+		else if (metaIt->second->typeName() == "int64")
+		{
+			openvdb::TypedMetadata<openvdb::Int64>::ConstPtr typedPtr = openvdb::DynamicPtrCast<openvdb::TypedMetadata<openvdb::Int64> >(ptr);
+			if (typedPtr)
+			{
+				Int64DataPtr intData = new Int64Data();
+				intData->writable() = typedPtr->value();
+				metadata->members()[metaIt->first] = intData;
+			}
+		}
+		else if (metaIt->second->typeName() == "bool")
+		{
+			openvdb::TypedMetadata<bool>::ConstPtr typedPtr = openvdb::DynamicPtrCast<openvdb::TypedMetadata<bool> > (ptr);
+			if (typedPtr)
+			{
+				BoolDataPtr data = new BoolData();
+				data->writable() = typedPtr->value();
+				metadata->members()[metaIt->first] = data;
+			}
+
+		}
+		else if (metaIt->second->typeName() == "vec3i")
+		{
+			openvdb::TypedMetadata<openvdb::math::Vec3i>::ConstPtr typedPtr = openvdb::DynamicPtrCast<openvdb::TypedMetadata<openvdb::math::Vec3i> >(ptr);
+			if (typedPtr)
+			{
+				V3iDataPtr data = new V3iData();
+				data->writable() = Imath::V3i( typedPtr->value().x(), typedPtr->value().y(), typedPtr->value().z() );
+				metadata->members()[metaIt->first] = data;
+			}
+		}
+		else
+		{
+			StringDataPtr stringData = new StringData();
+			stringData->writable() = "unsupported type: " + metaIt->second->typeName();
+			metadata->members()[metaIt->first] = stringData;
+		}
+	}
+	return metadata;
 }
 
 openvdb::GridBase::Ptr VDBGrid::grid()
