@@ -412,6 +412,7 @@ class VDBScene : public SceneInterface
 				io::File file( m_fileName );
 				file.open();
 
+				// todo this loads all the grids upfront. Is there anyway grid loading can be deferred?
 				m_grids = file.getGrids();
 				m_metaData = file.getMetadata();
 			}

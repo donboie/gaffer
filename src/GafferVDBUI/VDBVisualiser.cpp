@@ -57,9 +57,6 @@ void extract(typename GridType::ConstPtr grid, std::vector<V3f>& positions, std:
 {
 	using openvdb::Index64;
 
-//	Index getDepth() const { return ROOT_LEVEL - mLevel; }
-//	static Index getLeafDepth() { return LEAF_DEPTH; }
-
 	openvdb::Vec3d ptn;
 	openvdb::CoordBBox bbox;
 
@@ -117,11 +114,13 @@ void extract(typename GridType::ConstPtr grid, std::vector<V3f>& positions, std:
 		ptn = grid->indexToWorld(ptn);
 		boundPositions[boundIndex++] = V3f(ptn[0], ptn[1], ptn[2]);
 
+		//todo remove the need for push_back
 		for (size_t i = 0; i < 12; ++i)
 		{
 			vertsPerCurve.push_back(2);
 		}
 
+		//todo remove the need for push_back
 		positions.push_back(boundPositions[0]);
 		positions.push_back(boundPositions[1]);
 
@@ -213,20 +212,23 @@ class VDBVisualiser : public ObjectVisualiser
 				return m_group;
 			}
 
+			// todo which grid should be visualised?
 			std::vector<std::string> names = vdbObject->gridNames();
-
 			if (names.empty())
 			{
 				return m_group;
 			}
-
 			GafferVDB::VDBGrid::Ptr grid = vdbObject->grid(names[0]);
 
 			openvdb::GridBase::ConstPtr vdbgrid = grid->grid();
 
 			IECoreGL::Group *rootGroup = new IECoreGL::Group();
 
+			// todo can these colors go into a config?
 			static std::vector<Color4f> colors = { Color4f( 0.56, 0.06, 0.2, 0.2 ), Color4f( 0.06, 0.56, 0.2, 0.2 ), Color4f( 0.06, 0.2, 0.56, 0.2 ), Color4f( 0.6, 0.6, 0.6, 0.2 ) };
+
+			// todo iterate over the grid only once
+			// todo options to define what to visualise (tree, values)
 			for (openvdb::Index64 depth = 0; depth < 4; ++depth)
 			{
 				IECoreGL::Group *group = new IECoreGL::Group();
@@ -243,6 +245,7 @@ class VDBVisualiser : public ObjectVisualiser
 				IECore::IntVectorDataPtr vertsPerCurve = new IECore::IntVectorData;
 				vector<int> &topology = vertsPerCurve->writable();
 
+				// todo deal with other grid types
 				extract<openvdb::FloatGrid>( openvdb::GridBase::constGrid<openvdb::FloatGrid>( vdbgrid ), p, topology, depth);
 
 				IECoreGL::CurvesPrimitivePtr curves = new IECoreGL::CurvesPrimitive( IECore::CubicBasisf::linear(), false, vertsPerCurve );
@@ -251,6 +254,7 @@ class VDBVisualiser : public ObjectVisualiser
 
 				rootGroup->addChild( group );
 			}
+
 			return rootGroup;
 		}
 
