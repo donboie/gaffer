@@ -39,9 +39,11 @@
 
 #include "IECore/MeshPrimitive.h"
 
+#include "Gaffer/StringPlug.h"
+
 #include "GafferVDB/VDBObject.h"
 #include "GafferVDB/VDBGrid.h"
-#include "GafferVDB/VolumeToMesh.h"
+#include "GafferVDB/VDBToMesh.h"
 
 using namespace std;
 using namespace Imath;
@@ -169,70 +171,86 @@ IECore::MeshPrimitivePtr volumeToMesh( openvdb::GridBase::ConstPtr grid, double 
 // VolumeToMesh implementation
 //////////////////////////////////////////////////////////////////////////
 
-IE_CORE_DEFINERUNTIMETYPED( VolumeToMesh );
+IE_CORE_DEFINERUNTIMETYPED( VDBToMesh );
 
-size_t VolumeToMesh::g_firstPlugIndex = 0;
+size_t VDBToMesh::g_firstPlugIndex = 0;
 
-VolumeToMesh::VolumeToMesh( const std::string &name )
+VDBToMesh::VDBToMesh( const std::string &name )
 	:	SceneElementProcessor( name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 
+	addChild( new StringPlug( "gridName", Plug::In, "levelset" ) );
 	addChild( new FloatPlug( "isoValue", Plug::In, 0.0f ) );
 	addChild( new FloatPlug( "adaptivity", Plug::In, 0.0f, 0.0f, 1.0f ) );
+
 }
 
-VolumeToMesh::~VolumeToMesh()
+VDBToMesh::~VDBToMesh()
 {
 }
 
-Gaffer::FloatPlug *VolumeToMesh::isoValuePlug()
+
+Gaffer::StringPlug *VDBToMesh::gridNamePlug()
 {
-	return getChild<FloatPlug>( g_firstPlugIndex );
+	return  getChild<StringPlug>( g_firstPlugIndex );
 }
 
-const Gaffer::FloatPlug *VolumeToMesh::isoValuePlug() const
+const Gaffer::StringPlug *VDBToMesh::gridNamePlug() const
 {
-	return getChild<FloatPlug>( g_firstPlugIndex );
+	return  getChild<StringPlug>( g_firstPlugIndex );
 }
 
-Gaffer::FloatPlug *VolumeToMesh::adaptivityPlug()
+
+Gaffer::FloatPlug *VDBToMesh::isoValuePlug()
 {
-	return getChild<FloatPlug>( g_firstPlugIndex + 1 );
+	return getChild<FloatPlug>( g_firstPlugIndex + 1);
 }
 
-const Gaffer::FloatPlug *VolumeToMesh::adaptivityPlug() const
+const Gaffer::FloatPlug *VDBToMesh::isoValuePlug() const
 {
-	return getChild<FloatPlug>( g_firstPlugIndex + 1 );
+	return getChild<FloatPlug>( g_firstPlugIndex + 1);
 }
 
-void VolumeToMesh::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
+Gaffer::FloatPlug *VDBToMesh::adaptivityPlug()
+{
+	return getChild<FloatPlug>( g_firstPlugIndex + 2 );
+}
+
+const Gaffer::FloatPlug *VDBToMesh::adaptivityPlug() const
+{
+	return getChild<FloatPlug>( g_firstPlugIndex + 2 );
+}
+
+void VDBToMesh::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
 {
 	SceneElementProcessor::affects( input, outputs );
 
 	if(
 		input == isoValuePlug() ||
-		input == adaptivityPlug()
+		input == adaptivityPlug() ||
+		input == gridNamePlug()
 	)
 	{
 		outputs.push_back( outPlug()->objectPlug() );
 	}
 }
 
-bool VolumeToMesh::processesObject() const
+bool VDBToMesh::processesObject() const
 {
 	return true;
 }
 
-void VolumeToMesh::hashProcessedObject( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+void VDBToMesh::hashProcessedObject( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
 	SceneElementProcessor::hashProcessedObject( path, context, h );
 
+	gridNamePlug()->hash( h );
 	isoValuePlug()->hash( h );
 	adaptivityPlug()->hash( h );
 }
 
-IECore::ConstObjectPtr VolumeToMesh::computeProcessedObject( const ScenePath &path, const Gaffer::Context *context, IECore::ConstObjectPtr inputObject ) const
+IECore::ConstObjectPtr VDBToMesh::computeProcessedObject( const ScenePath &path, const Gaffer::Context *context, IECore::ConstObjectPtr inputObject ) const
 {
 	const VDBObject *vdbObject = runTimeCast<const VDBObject>( inputObject.get() );
 	if( !vdbObject )
@@ -240,18 +258,12 @@ IECore::ConstObjectPtr VolumeToMesh::computeProcessedObject( const ScenePath &pa
 		return inputObject;
 	}
 
-	std::vector<std::string> gridNames = vdbObject->gridNames();
-
-	if (gridNames.empty())
-		return inputObject;
-
-	GafferVDB::VDBGrid::Ptr grid = vdbObject->grid(gridNames[0]);
+	GafferVDB::VDBGrid::Ptr grid = vdbObject->grid( gridNamePlug()->getValue() );
 
 	if (!grid)
 	{
 		return inputObject;
 	}
-
 
 	return volumeToMesh( grid->grid(), isoValuePlug()->getValue(), adaptivityPlug()->getValue() );
 }

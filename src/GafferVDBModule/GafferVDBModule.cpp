@@ -39,7 +39,7 @@
 #include "GafferBindings/DependencyNodeBinding.h"
 
 #include "GafferVDB/MeshToVDB.h"
-#include "GafferVDB/VolumeToMesh.h"
+#include "GafferVDB/VDBToMesh.h"
 
 #include "GafferVDBBindings/VDBObjectBinding.h"
 #include "GafferVDBBindings/VDBGridBinding.h"
@@ -55,6 +55,6 @@ BOOST_PYTHON_MODULE( _GafferVDB )
 	bindVDBGrid();
 
 	GafferBindings::DependencyNodeClass<MeshToVDB>();
-	GafferBindings::DependencyNodeClass<VolumeToMesh>();
+	GafferBindings::DependencyNodeClass<VDBToMesh>();
 
 }

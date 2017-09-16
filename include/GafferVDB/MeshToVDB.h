@@ -43,6 +43,12 @@
 
 #include "GafferVDB/TypeIds.h"
 
+
+namespace Gaffer
+{
+class StringPlug;
+}
+
 namespace GafferVDB
 {
 
@@ -57,6 +63,9 @@ class MeshToVDB : public GafferScene::SceneElementProcessor
 		virtual ~MeshToVDB();
 
 		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferVDB::MeshToVDB, MeshToVDBTypeId, GafferScene::SceneElementProcessor );
+
+		Gaffer::StringPlug *gridNamePlug();
+		const Gaffer::StringPlug *gridNamePlug() const;
 
 		Gaffer::FloatPlug *voxelSizePlug();
 		const Gaffer::FloatPlug *voxelSizePlug() const;

@@ -46,15 +46,18 @@
 namespace GafferVDB
 {
 
-class VolumeToMesh : public GafferScene::SceneElementProcessor
+class VDBToMesh : public GafferScene::SceneElementProcessor
 {
 
 	public :
 
-		VolumeToMesh( const std::string &name=defaultName<VolumeToMesh>() );
-		virtual ~VolumeToMesh();
+		VDBToMesh( const std::string &name=defaultName<VDBToMesh>() );
+		virtual ~VDBToMesh();
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferVDB::VolumeToMesh, VolumeToMeshTypeId, GafferScene::SceneElementProcessor );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferVDB::VDBToMesh, VolumeToMeshTypeId, GafferScene::SceneElementProcessor );
+
+		Gaffer::StringPlug *gridNamePlug();
+		const Gaffer::StringPlug *gridNamePlug() const;
 
 		Gaffer::FloatPlug *isoValuePlug();
 		const Gaffer::FloatPlug *isoValuePlug() const;
@@ -76,7 +79,7 @@ class VolumeToMesh : public GafferScene::SceneElementProcessor
 
 };
 
-IE_CORE_DECLAREPTR( VolumeToMesh )
+IE_CORE_DECLAREPTR( VDBToMesh )
 
 } // namespace GafferVDB
 

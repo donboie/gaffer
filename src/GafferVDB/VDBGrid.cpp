@@ -57,6 +57,10 @@ VDBGrid::~VDBGrid()
 
 IECore::CompoundObjectPtr VDBGrid::metadata() const
 {
+	//todo dirty this when the grid has been updated rather
+	//than assuming it always has to be done.
+	m_grid->addStatsMetadata();
+
 	CompoundObjectPtr metadata = new CompoundObject();
 
 	for (auto metaIt = m_grid->beginMeta(); metaIt != m_grid->endMeta(); ++metaIt)

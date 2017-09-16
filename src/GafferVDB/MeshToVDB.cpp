@@ -37,6 +37,8 @@
 #include "openvdb/openvdb.h"
 #include "openvdb/tools/MeshToVolume.h"
 
+#include "Gaffer/StringPlug.h"
+
 #include "IECore/MeshPrimitive.h"
 
 #include "GafferVDB/VDBObject.h"
@@ -128,6 +130,7 @@ MeshToVDB::MeshToVDB( const std::string &name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 
+	addChild( new StringPlug( "gridName", Plug::In, "levelset") );
 	addChild( new FloatPlug( "voxelSize", Plug::In, 0.1f, 0.0001f ) );
 }
 
@@ -135,21 +138,31 @@ MeshToVDB::~MeshToVDB()
 {
 }
 
+Gaffer::StringPlug *MeshToVDB::gridNamePlug()
+{
+	return  getChild<StringPlug>( g_firstPlugIndex );
+}
+
+const Gaffer::StringPlug *MeshToVDB::gridNamePlug() const
+{
+	return  getChild<StringPlug>( g_firstPlugIndex );
+}
+
 FloatPlug *MeshToVDB::voxelSizePlug()
 {
-	return getChild<FloatPlug>( g_firstPlugIndex );
+	return getChild<FloatPlug>( g_firstPlugIndex + 1 );
 }
 
 const FloatPlug *MeshToVDB::voxelSizePlug() const
 {
-	return getChild<FloatPlug>( g_firstPlugIndex );
+	return getChild<FloatPlug>( g_firstPlugIndex + 1);
 }
 
 void MeshToVDB::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
 {
 	SceneElementProcessor::affects( input, outputs );
 
-	if( input == voxelSizePlug() )
+	if( input == voxelSizePlug() || input == gridNamePlug() )
 	{
 		outputs.push_back( outPlug()->objectPlug() );
 	}
@@ -164,6 +177,7 @@ void MeshToVDB::hashProcessedObject( const ScenePath &path, const Gaffer::Contex
 {
 	SceneElementProcessor::hashProcessedObject( path, context, h );
 
+	gridNamePlug()->hash( h );
 	voxelSizePlug()->hash( h );
 }
 
@@ -187,7 +201,7 @@ IECore::ConstObjectPtr MeshToVDB::computeProcessedObject( const ScenePath &path,
 		//primitiveIndexGrid.get()
 	);
 
-	grid->setName("levelset");
+	grid->setName( gridNamePlug()->getValue() );
 
 	IECore::CompoundObjectPtr gridCompound = new IECore::CompoundObject();
 	gridCompound->members()[grid->getName()] = new GafferVDB::VDBGrid ( grid );
