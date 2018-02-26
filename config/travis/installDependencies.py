@@ -21,6 +21,8 @@ if platform == 'osx':
 else:
 	context = None
 
+print sys.version_info
+
 downloadURL = "https://github.com/GafferHQ/dependencies/releases/download/0.44.0.0/gafferDependencies-0.44.0.0-" + platform + ".tar.gz"
 
 sys.stderr.write( "Downloading dependencies \"%s\"" % downloadURL )
