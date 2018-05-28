@@ -94,7 +94,7 @@ struct Context::Accessor
 	/// Returns true if the value has changed
 	bool set( Storage &storage, const T &value )
 	{
-		const DataType *d = IECore::runTimeCast<const DataType>( storage.data );
+		const DataType *d = IECore::runTimeCast<const DataType>( storage.getData() );
 		if( d )
 		{
 			if( d->readable() == value )
@@ -102,7 +102,7 @@ struct Context::Accessor
 				// no change so early out
 				return false;
 			}
-			else if( storage.ownership == Copied )
+			else if( storage.getOwnership() == Copied )
 			{
 				// update in place to avoid allocations. the cast is ok
 				// because we created the value for our own use in the first
@@ -116,14 +116,14 @@ struct Context::Accessor
 
 		// data wasn't of the right type or we didn't have sole ownership.
 		// remove the old value and replace it with a new one.
-		if( storage.data && storage.ownership != Borrowed )
+		if( storage.getData() && storage.getOwnership() != Borrowed )
 		{
-			storage.data->removeRef();
+			storage.getData()->removeRef();
 		}
 
-		storage.data = new DataType( value );
-		storage.data->addRef();
-		storage.ownership = Copied;
+		storage.setData(  new DataType( value ) );
+		storage.getData()->addRef();
+		storage.setOwnership( Copied );
 
 		return true;
 	}
@@ -146,21 +146,21 @@ struct Context::Accessor<T, typename boost::enable_if<boost::is_base_of<IECore::
 
 	bool set( Storage &storage, const T &value )
 	{
-		const ValueType *d = IECore::runTimeCast<const ValueType>( storage.data );
+		const ValueType *d = IECore::runTimeCast<const ValueType>( storage.getData() );
 		if( d && d->isEqualTo( value ) )
 		{
 			return false;
 		}
 
-		if( storage.data && storage.ownership != Borrowed )
+		if( storage.getData() && storage.getOwnership() != Borrowed )
 		{
-			storage.data->removeRef();
+			storage.getData()->removeRef();
 		}
 
 		IECore::DataPtr valueCopy = value->copy();
-		storage.data = valueCopy.get();
-		storage.data->addRef();
-		storage.ownership = Copied;
+		storage.setData( valueCopy.get() );
+		storage.getData()->addRef();
+		storage.setOwnership( Copied );
 
 		return true;
 	}
@@ -195,9 +195,15 @@ typename Context::Accessor<T>::ResultType Context::get( const IECore::InternedSt
 	Map::const_iterator it = m_map.find( name );
 	if( it == m_map.end() )
 	{
+
+	}
+
+	if ( !it->second.isValid() )
+	{
 		throw IECore::Exception( boost::str( boost::format( "Context has no entry named \"%s\"" ) % name.value() ) );
 	}
-	return Accessor<T>().get( it->second.data );
+
+	return Accessor<T>().get( it->second.getData() );
 }
 
 template<typename T>
@@ -208,7 +214,13 @@ typename Context::Accessor<T>::ResultType Context::get( const IECore::InternedSt
 	{
 		return defaultValue;
 	}
-	return Accessor<T>().get( it->second.data );
+
+	if ( !it->second.isValid() )
+	{
+		return defaultValue;
+	}
+
+	return Accessor<T>().get( it->second.getData() );
 }
 
 const IECore::Canceller *Context::canceller() const

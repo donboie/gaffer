@@ -295,13 +295,21 @@ class GAFFER_API Context : public IECore::RefCounted
 		// Storage for each entry.
 		struct Storage
 		{
-			Storage() : data( nullptr ), ownership( Copied ) {}
+			Storage() : m_packedData( 0ULL ) {} // default ownership copied.
+
+			const IECore::Data *getData() const { return reinterpret_cast<const IECore::Data*> ( m_packedData & ~(0x7ULL << (61ULL))) ; }
+			void setData( const IECore::Data *data ) { m_packedData = (m_packedData & (0x7ULL << (61ULL))) | ((size_t) data); m_packedData |= (1ULL << 61ULL);  }
+
+			bool isValid() const { return m_packedData & (1ULL << 61ULL); }
+			void invalidate() { m_packedData &= ~(1ULL << 61ULL); }
+
+			Ownership getOwnership() const { return static_cast<Ownership> ( (m_packedData >> 62ULL) & 0x3 ); }
+			void setOwnership( Ownership ownership ) { m_packedData = (m_packedData & ~(0x3ULL << 62ULL)) | (((size_t) ownership) << 62ULL); }
+
+		private:
 			// We reference the data with a raw pointer to avoid the compulsory
 			// overhead of an intrusive pointer.
-			const IECore::Data *data;
-			// And use this ownership flag to tell us when we need to do explicit
-			// reference count management.
-			Ownership ownership;
+			size_t m_packedData;
 		};
 
 		typedef boost::container::flat_map<IECore::InternedString, Storage> Map;

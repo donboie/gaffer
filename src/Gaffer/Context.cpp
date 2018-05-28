@@ -138,18 +138,18 @@ Context::Context( const Context &other, Ownership ownership, const IECore::Cance
 
 	for( Map::iterator it = m_map.begin(), eIt = m_map.end(); it != eIt; ++it )
 	{
-		it->second.ownership = ownership;
+		it->second.setOwnership( ownership );
 		switch( ownership )
 		{
 			case Copied :
 				{
-					DataPtr valueCopy = it->second.data->copy();
-					it->second.data = valueCopy.get();
-					it->second.data->addRef();
+					DataPtr valueCopy = it->second.getData()->copy();
+					it->second.setData( valueCopy.get() );
+					it->second.getData()->addRef();
 					break;
 				}
 			case Shared :
-				it->second.data->addRef();
+				it->second.getData()->addRef();
 				break;
 			case Borrowed :
 				// no need to do anything
@@ -181,9 +181,9 @@ Context::~Context()
 {
 	for( Map::const_iterator it = m_map.begin(), eIt = m_map.end(); it != eIt; ++it )
 	{
-		if( it->second.ownership != Borrowed )
+		if( it->second.getOwnership() != Borrowed )
 		{
-			it->second.data->removeRef();
+			it->second.getData()->removeRef();
 		}
 	}
 
@@ -195,7 +195,7 @@ void Context::remove( const IECore::InternedString &name )
 	Map::iterator it = m_map.find( name );
 	if( it != m_map.end() )
 	{
-		m_map.erase( it );
+		it->second.invalidate();
 		m_hashValid = false;
 		if( m_changedSignal )
 		{
@@ -211,21 +211,18 @@ void Context::removeMatching( const StringAlgo::MatchPattern &pattern )
 		return;
 	}
 
-	for( Map::iterator it = m_map.begin(); it != m_map.end(); )
+	for( Map::iterator it = m_map.begin(); it != m_map.end(); it++)
 	{
 		if( StringAlgo::matchMultiple( it->first, pattern ) )
 		{
-			it = m_map.erase( it );
+			it->second.invalidate();
 			m_hashValid = false;
 			if( m_changedSignal )
 			{
 				(*m_changedSignal)( this, it->first );
 			}
 		}
-		else
-		{
-			it++;
-		}
+
 	}
 }
 
@@ -242,6 +239,11 @@ void Context::names( std::vector<IECore::InternedString> &names ) const
 {
 	for( Map::const_iterator it = m_map.begin(), eIt = m_map.end(); it != eIt; it++ )
 	{
+		if ( !it->second.isValid() )
+		{
+			continue;
+		}
+
 		names.push_back( it->first );
 	}
 }
@@ -311,9 +313,16 @@ IECore::MurmurHash Context::hash() const
 		{
 			continue;
 		}
+
+		if ( !it->second.isValid() )
+		{
+			continue;
+		}
+
 		m_hash.append( (uint64_t)&name );
-		it->second.data->hash( m_hash );
+		it->second.getData()->hash( m_hash );
 	}
+
 	m_hashValid = true;
 	return m_hash;
 }
@@ -327,7 +336,12 @@ bool Context::operator == ( const Context &other ) const
 	Map::const_iterator otherIt = other.m_map.begin();
 	for( Map::const_iterator it = m_map.begin(), eIt = m_map.end(); it != eIt; ++it, ++otherIt )
 	{
-		if( it->first != otherIt->first || !( it->second.data->isEqualTo( otherIt->second.data ) ) )
+		if ( !it->second.isValid() )
+		{
+			continue;
+		}
+
+		if( it->first != otherIt->first || !( it->second.getData()->isEqualTo( otherIt->second.getData() ) ) )
 		{
 			return false;
 		}
