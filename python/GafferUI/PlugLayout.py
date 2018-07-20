@@ -641,9 +641,9 @@ class _TabLayout( _Layout ) :
 				else :
 					tab = GafferUI.ScrolledContainer( borderWidth = 8 )
 					if self.orientation() == GafferUI.ListContainer.Orientation.Vertical :
-						tab.setHorizontalMode( GafferUI.ScrolledContainer.ScrollMode.Never )
+						tab.setHorizontalMode( GafferUI.Enums.ScrollMode.Never )
 					else :
-						tab.setVerticalMode( GafferUI.ScrolledContainer.ScrollMode.Never )
+						tab.setVerticalMode( GafferUI.Enums.ScrollMode.Never )
 
 				tab.setChild( _CollapsibleLayout( self.orientation() ) )
 			tab.getChild().update( subsection )
