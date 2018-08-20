@@ -63,6 +63,15 @@ struct LocationWriter
 	{
 	}
 
+	LocationWriter( LocationWriter& other, const InternedString &childName )
+	: m_output (other.m_output),
+	  m_sets( other.m_sets ),
+	  m_time ( other.m_time ),
+	  m_mutex( other.m_mutex)
+	{
+		m_output->child( childName, SceneInterface::CreateIfMissing );
+	}
+
 	/// first half of this function can be lock free reading data from ScenePlug
 	/// once all the data has been read then we take a global lock and write
 	/// into the SceneInterface
@@ -110,7 +119,7 @@ struct LocationWriter
 
 		if( !scenePath.empty() )
 		{
-			m_output = m_output->child( scenePath.back(), SceneInterface::CreateIfMissing );
+			m_output = m_output->child( scenePath.back(), SceneInterface::ThrowIfMissing );
 		}
 
 		for( CompoundObject::ObjectMap::const_iterator it = attributes->members().begin(), eIt = attributes->members().end(); it != eIt; it++ )

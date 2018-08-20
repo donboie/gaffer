@@ -143,7 +143,12 @@ class LocationTask : public tbb::task
 				return nullptr;
 			}
 
-			std::vector<ThreadableFunctor> childFunctors( childNames.size(), m_f );
+			std::vector<ThreadableFunctor> childFunctors;
+			childFunctors.reserve( childNames.size() );
+			for ( auto &childName : childNames )
+			{
+				childFunctors.emplace_back( m_f, childName );
+			}
 
 			set_ref_count( 1 + childNames.size() );
 

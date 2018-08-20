@@ -734,6 +734,13 @@ struct CameraOutput : public LocationOutput
 	{
 	}
 
+  	CameraOutput( CameraOutput &other, const InternedString &name )
+  	: LocationOutput( other ),
+  	  m_globals( other.m_globals ),
+  	  m_cameraSet( other.m_cameraSet )
+	{
+	}
+
 	bool operator()( const ScenePlug *scene, const ScenePlug::ScenePath &path )
 	{
 		if( !LocationOutput::operator()( scene, path ) )
@@ -779,6 +786,12 @@ struct LightOutput : public LocationOutput
 	{
 	}
 
+	LightOutput( LightOutput& other, const InternedString& childName )
+	: LocationOutput( other ),
+	  m_lightSet( other.m_lightSet )
+	{
+	}
+
 	bool operator()( const ScenePlug *scene, const ScenePlug::ScenePath &path )
 	{
 		if( !LocationOutput::operator()( scene, path ) )
@@ -812,6 +825,13 @@ struct ObjectOutput : public LocationOutput
 
 	ObjectOutput( IECoreScenePreview::Renderer *renderer, const IECore::CompoundObject *globals, const GafferScene::RendererAlgo::RenderSets &renderSets, const ScenePlug::ScenePath &root )
 		:	LocationOutput( renderer, globals, renderSets, root ), m_cameraSet( renderSets.camerasSet() ), m_lightSet( renderSets.lightsSet() )
+	{
+	}
+
+	ObjectOutput( ObjectOutput &other, const InternedString& name )
+	: LocationOutput( other ),
+	  m_cameraSet( other.m_cameraSet),
+	  m_lightSet( other.m_lightSet )
 	{
 	}
 
