@@ -40,6 +40,7 @@
 
 #include "Gaffer/Plug.h"
 #include "Gaffer/PlugAlgo.h"
+#include "Gaffer/ValuePlug.h"
 
 #include "IECorePython/RefCountedBinding.h"
 
@@ -47,18 +48,63 @@ using namespace boost::python;
 using namespace IECorePython;
 using namespace Gaffer;
 
+namespace
+{
+
+void replacePlug( GraphComponent &parent, Plug &plug )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	PlugAlgo::replacePlug( &parent, &plug );
+}
+
+ValuePlugPtr createPlugFromData( const std::string &name, Plug::Direction direction, unsigned flags, const IECore::Data *value )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	return PlugAlgo::createPlugFromData( name, direction, flags, value );
+}
+
+IECore::DataPtr extractDataFromPlug( const ValuePlug *plug )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	return PlugAlgo::extractDataFromPlug( plug );
+}
+
+PlugPtr promote( Plug &plug, Plug *parent, const IECore::StringAlgo::MatchPattern &excludeMetadata )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	return PlugAlgo::promote( &plug, parent, excludeMetadata );
+}
+
+PlugPtr promoteWithName( Plug &plug, const IECore::InternedString &name, Plug *parent, const IECore::StringAlgo::MatchPattern &excludeMetadata )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	return PlugAlgo::promoteWithName( &plug, name, parent, excludeMetadata );
+}
+
+void unpromote( Plug &plug )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	PlugAlgo::unpromote( &plug );
+}
+
+
+
+} // namespace
+
 void GafferModule::bindPlugAlgo()
 {
 	object module( borrowed( PyImport_AddModule( "Gaffer.PlugAlgo" ) ) );
 	scope().attr( "PlugAlgo" ) = module;
 	scope moduleScope( module );
 
-	def( "replacePlug", &PlugAlgo::replacePlug, ( arg( "parent" ), arg( "plug" ) ) );
+	def( "replacePlug", &replacePlug, ( arg( "parent" ), arg( "plug" ) ) );
+	def( "createPlugFromData", &createPlugFromData );
+	def( "extractDataFromPlug", &extractDataFromPlug );
 
 	def( "canPromote", &PlugAlgo::canPromote, ( arg( "plug" ), arg( "parent" ) = object() ) );
-	def( "promote", &PlugAlgo::promote, ( arg( "plug" ), arg( "parent" ) = object(), arg( "excludeMetadata" ) = "layout:*" ), return_value_policy<CastToIntrusivePtr>() );
-	def( "promoteWithName", &PlugAlgo::promoteWithName, ( arg( "plug" ), arg( "name" ), arg( "parent" ) = object(), arg( "excludeMetadata" ) = "layout:*" ), return_value_policy<CastToIntrusivePtr>() );
+	def( "promote", &promote, ( arg( "plug" ), arg( "parent" ) = object(), arg( "excludeMetadata" ) = "layout:*" ) );
+	def( "promoteWithName", &promoteWithName, ( arg( "plug" ), arg( "name" ), arg( "parent" ) = object(), arg( "excludeMetadata" ) = "layout:*" ) );
 	def( "isPromoted", &PlugAlgo::isPromoted, ( arg( "plug" ) ) );
-	def( "unpromote", &PlugAlgo::unpromote, ( arg( "plug" ) ) );
+	def( "unpromote", &unpromote, ( arg( "plug" ) ) );
 
 }

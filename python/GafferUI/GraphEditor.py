@@ -59,7 +59,7 @@ class GraphEditor( GafferUI.Editor ) :
 		self.__rootChangedConnection = graphGadget.rootChangedSignal().connect( Gaffer.WeakMethod( self.__rootChanged ) )
 
 		self.__gadgetWidget.getViewportGadget().setPrimaryChild( graphGadget )
-		self.__gadgetWidget.getViewportGadget().setDragTracking( True )
+		self.__gadgetWidget.getViewportGadget().setDragTracking( GafferUI.ViewportGadget.DragTracking.XDragTracking | GafferUI.ViewportGadget.DragTracking.YDragTracking )
 		self.__frame( scriptNode.selection() )
 
 		self.__buttonPressConnection = self.__gadgetWidget.buttonPressSignal().connect( Gaffer.WeakMethod( self.__buttonPress ) )
@@ -144,21 +144,44 @@ class GraphEditor( GafferUI.Editor ) :
 	@classmethod
 	def appendConnectionVisibilityMenuDefinitions( cls, graphEditor, node, menuDefinition ) :
 
+		def plugDirectionsWalk( gadget ) :
+
+			result = set()
+			if isinstance( gadget, GafferUI.Nodule ) :
+				result.add( gadget.plug().direction() )
+
+			for c in gadget.children() :
+				result |= plugDirectionsWalk( c )
+
+			return result
+
+		plugDirections = plugDirectionsWalk( graphEditor.graphGadget().nodeGadget( node ) )
+		if not plugDirections :
+			return
+
+		readOnly = Gaffer.MetadataAlgo.readOnly( node )
+
 		menuDefinition.append( "/ConnectionVisibilityDivider", { "divider" : True } )
-		menuDefinition.append(
-			"/Show Input Connections",
-			{
-				"checkBox" : functools.partial( cls.__getNodeInputConnectionsVisible, graphEditor.graphGadget(), node ),
-				"command" : functools.partial( cls.__setNodeInputConnectionsVisible, graphEditor.graphGadget(), node )
-			}
-		)
-		menuDefinition.append(
-			"/Show Output Connections",
-			{
-				"checkBox" : functools.partial( cls.__getNodeOutputConnectionsVisible, graphEditor.graphGadget(), node ),
-				"command" : functools.partial( cls.__setNodeOutputConnectionsVisible, graphEditor.graphGadget(), node )
-			}
-		)
+
+		if Gaffer.Plug.Direction.In in plugDirections :
+			menuDefinition.append(
+				"/Show Input Connections",
+				{
+					"checkBox" : functools.partial( cls.__getNodeInputConnectionsVisible, graphEditor.graphGadget(), node ),
+					"command" : functools.partial( cls.__setNodeInputConnectionsVisible, graphEditor.graphGadget(), node ),
+					"active" : not readOnly,
+				}
+			)
+
+		if Gaffer.Plug.Direction.Out in plugDirections :
+			menuDefinition.append(
+				"/Show Output Connections",
+				{
+					"checkBox" : functools.partial( cls.__getNodeOutputConnectionsVisible, graphEditor.graphGadget(), node ),
+					"command" : functools.partial( cls.__setNodeOutputConnectionsVisible, graphEditor.graphGadget(), node ),
+					"active" : not readOnly
+				}
+			)
 
 	## May be used from a slot attached to nodeContextMenuSignal() to install a
 	# standard menu item for modifying the enabled state of a node.
@@ -186,7 +209,7 @@ class GraphEditor( GafferUI.Editor ) :
 		menuDefinition.append( "/ContentsDivider", { "divider" : True } )
 		menuDefinition.append( "/Show Contents...", { "command" : functools.partial( cls.acquire, node ) } )
 
-	__nodeDoubleClickSignal = Gaffer.Signal2()
+	__nodeDoubleClickSignal = GafferUI.WidgetEventSignal()
 	## Returns a signal which is emitted whenever a node is double clicked.
 	# Slots should have the signature ( graphEditor, node ).
 	@classmethod
@@ -409,13 +432,14 @@ class GraphEditor( GafferUI.Editor ) :
 		return []
 
 	def __currentFrame( self ) :
-
 		viewportGadget = self.graphGadgetWidget().getViewportGadget()
-		camera = viewportGadget.getCamera()
-		frame = camera.parameters()["screenWindow"].value
-		translation = viewportGadget.getCameraTransform().translation()
-		frame.setMin( frame.min() + imath.V2f( translation.x, translation.y ) )
-		frame.setMax( frame.max() + imath.V2f( translation.x, translation.y ) )
+
+		rasterMin = viewportGadget.rasterToWorldSpace( imath.V2f( 0 ) ).p0
+		rasterMax = viewportGadget.rasterToWorldSpace( imath.V2f( viewportGadget.getViewport() ) ).p0
+
+		frame = imath.Box2f()
+		frame.extendBy( imath.V2f( rasterMin[0], rasterMin[1] ) )
+		frame.extendBy( imath.V2f( rasterMax[0], rasterMax[1] ) )
 
 		return frame
 

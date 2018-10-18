@@ -39,13 +39,13 @@
 
 #include "GafferSceneUI/ContextAlgo.h"
 
+#include "GafferScene/DeleteObject.h"
 #include "GafferScene/Grid.h"
 #include "GafferScene/LightToCamera.h"
 #include "GafferScene/PathFilter.h"
 #include "GafferScene/RendererAlgo.h"
 #include "GafferScene/SceneAlgo.h"
 #include "GafferScene/SetFilter.h"
-#include "GafferScene/StandardAttributes.h"
 #include "GafferScene/StandardOptions.h"
 
 #include "GafferUI/ImageGadget.h"
@@ -82,6 +82,60 @@ using namespace GafferScene;
 using namespace GafferSceneUI;
 
 //////////////////////////////////////////////////////////////////////////
+// SceneView::SelectionMask implementation
+//////////////////////////////////////////////////////////////////////////
+
+class SceneView::SelectionMask : public boost::signals::trackable
+{
+
+	public :
+
+		SelectionMask( SceneView *view )
+			:	m_view( view )
+		{
+			view->addChild(
+				new StringVectorDataPlug(
+					"selectionMask",
+					Plug::In,
+					new StringVectorData( { "Renderable", "NullObject" } )
+				)
+			);
+
+			updateSelectionMask();
+
+			view->plugSetSignal().connect( boost::bind( &SelectionMask::plugSet, this, ::_1 ) );
+		}
+
+	private :
+
+		Gaffer::StringVectorDataPlug *selectionMaskPlug()
+		{
+			return m_view->getChild<StringVectorDataPlug>( "selectionMask" );
+		}
+
+		SceneGadget *sceneGadget()
+		{
+			return static_cast<SceneGadget *>( m_view->viewportGadget()->getPrimaryChild() );
+		}
+
+		void plugSet( const Plug *plug )
+		{
+			if( plug == selectionMaskPlug() )
+			{
+				updateSelectionMask();
+			}
+		}
+
+		void updateSelectionMask()
+		{
+			sceneGadget()->setSelectionMask( selectionMaskPlug()->getValue().get() );
+		}
+
+		SceneView *m_view;
+
+};
+
+//////////////////////////////////////////////////////////////////////////
 // SceneView::DrawingMode implementation
 //////////////////////////////////////////////////////////////////////////
 
@@ -96,49 +150,20 @@ class SceneView::DrawingMode : public boost::signals::trackable
 			ValuePlugPtr drawingMode = new ValuePlug( "drawingMode" );
 			m_view->addChild( drawingMode );
 
-			ValuePlugPtr solid = new ValuePlug( "solid" );
-			drawingMode->addChild( solid );
-			solid->addChild( new BoolPlug( "enabled", Plug::In, true ) );
-			solid->addChild( new BoolPlug( "override" ) );
+			drawingMode->addChild( new BoolPlug( "solid", Plug::In, true ) );
+			drawingMode->addChild( new BoolPlug( "wireframe" ) );
+			drawingMode->addChild( new BoolPlug( "points" ) );
 
-			ValuePlugPtr wireframe = new ValuePlug( "wireframe" );
-			drawingMode->addChild( wireframe );
-			wireframe->addChild( new BoolPlug( "enabled" ) );
-			wireframe->addChild( new BoolPlug( "override" ) );
-
-			ValuePlugPtr points = new ValuePlug( "points" );
-			drawingMode->addChild( points );
-			points->addChild( new BoolPlug( "enabled" ) );
-			points->addChild( new BoolPlug( "override" ) );
-
-			ValuePlugPtr bound = new ValuePlug( "bound" );
-			drawingMode->addChild( bound );
-			bound->addChild( new BoolPlug( "enabled" ) );
-			bound->addChild( new BoolPlug( "override" ) );
-
-			ValuePlugPtr curves = new ValuePlug( "curves" );
+			ValuePlugPtr curves = new ValuePlug( "curvesPrimitive" );
 			drawingMode->addChild( curves );
+			curves->addChild( new BoolPlug( "useGLLines", Plug::In, true ) );
+			curves->addChild( new BoolPlug( "interpolate" ) );
 
-			ValuePlugPtr curvesUseGLLines = new ValuePlug( "useGLLines" );
-			curves->addChild( curvesUseGLLines );
-			curvesUseGLLines->addChild( new BoolPlug( "enabled", Plug::In, /* defaultValue = */ true ) );
-			curvesUseGLLines->addChild( new BoolPlug( "override" ) );
+			ValuePlugPtr points = new ValuePlug( "pointsPrimitive" );
+			drawingMode->addChild( points );
+			points->addChild( new BoolPlug( "useGLPoints", Plug::In, true ) );
 
-			ValuePlugPtr curvesInterpolate = new ValuePlug( "interpolate" );
-			curves->addChild( curvesInterpolate );
-			curvesInterpolate->addChild( new BoolPlug( "enabled" ) );
-			curvesInterpolate->addChild( new BoolPlug( "override" ) );
-
-			ValuePlugPtr pointsPrimitives = new ValuePlug( "pointsPrimitives" );
-			drawingMode->addChild( pointsPrimitives );
-
-			ValuePlugPtr pointsPrimitivesUseGLPoints = new ValuePlug( "useGLPoints" );
-			pointsPrimitives->addChild( pointsPrimitivesUseGLPoints );
-
-			pointsPrimitivesUseGLPoints->addChild( new BoolPlug( "enabled", Plug::In, /* defaultValue = */ true ) );
-			pointsPrimitivesUseGLPoints->addChild( new BoolPlug( "override" ) );
-
-			updateBaseState();
+			updateOpenGLOptions();
 
 			view->plugSetSignal().connect( boost::bind( &DrawingMode::plugSet, this, ::_1 ) );
 		}
@@ -159,64 +184,31 @@ class SceneView::DrawingMode : public boost::signals::trackable
 		{
 			if( plug == drawingModePlug() )
 			{
-				updateBaseState();
+				updateOpenGLOptions();
 			}
 		}
 
-		void updateBaseState()
+		void updateOpenGLOptions()
 		{
-			IECoreGL::State *baseState = sceneGadget()->baseState();
+			IECore::CompoundObjectPtr options = sceneGadget()->getOpenGLOptions()->copy();
+			GraphComponent *curvesPlug = drawingModePlug()->getChild( "curvesPrimitive" );
+			GraphComponent *pointsPlug = drawingModePlug()->getChild( "pointsPrimitive" );
 
-			const ValuePlug *solid = drawingModePlug()->getChild<ValuePlug>( "solid" );
-			baseState->add(
-				new IECoreGL::Primitive::DrawSolid( solid->getChild<BoolPlug>( "enabled" )->getValue() ),
-				solid->getChild<BoolPlug>( "override" )->getValue()
+			options->members()["gl:primitive:solid"] = new BoolData( drawingModePlug()->getChild<BoolPlug>( "solid" )->getValue() );
+			options->members()["gl:primitive:wireframe"] = new BoolData( drawingModePlug()->getChild<BoolPlug>( "wireframe" )->getValue() );
+			options->members()["gl:primitive:points"] = new BoolData( drawingModePlug()->getChild<BoolPlug>( "points" )->getValue() );
+			options->members()["gl:curvesPrimitive:useGLLines"] = new BoolData( curvesPlug->getChild<BoolPlug>( "useGLLines" )->getValue() );
+			/// \todo As a general rule we strive for a one-to-one mapping between cortex/gaffer/ui,
+			/// but in this case IgnoreBasis is far too technical a term. Consider changing the name
+			/// in Cortex.
+			options->members()["gl:curvesPrimitive:ignoreBasis"] = new BoolData( !curvesPlug->getChild<BoolPlug>( "interpolate" )->getValue() );
+			options->members()["gl:pointsPrimitive:useGLPoints"] = new StringData(
+				pointsPlug->getChild<BoolPlug>( "useGLPoints" )->getValue() ?
+				"forAll" :
+				"forGLPoints"
 			);
 
-			const ValuePlug *wireframe = drawingModePlug()->getChild<ValuePlug>( "wireframe" );
-			baseState->add(
-				new IECoreGL::Primitive::DrawWireframe( wireframe->getChild<BoolPlug>( "enabled" )->getValue() ),
-				wireframe->getChild<BoolPlug>( "override" )->getValue()
-			);
-
-			const ValuePlug *points = drawingModePlug()->getChild<ValuePlug>( "points" );
-			baseState->add(
-				new IECoreGL::Primitive::DrawPoints( points->getChild<BoolPlug>( "enabled" )->getValue() ),
-				points->getChild<BoolPlug>( "override" )->getValue()
-			);
-
-			const ValuePlug *bound = drawingModePlug()->getChild<ValuePlug>( "bound" );
-			baseState->add(
-				new IECoreGL::Primitive::DrawBound( bound->getChild<BoolPlug>( "enabled" )->getValue() ),
-				bound->getChild<BoolPlug>( "override" )->getValue()
-			);
-
-			const ValuePlug *curves = drawingModePlug()->getChild<ValuePlug>( "curves" );
-			const ValuePlug *curvesUseGLLines = curves->getChild<ValuePlug>( "useGLLines" );
-			baseState->add(
-				new IECoreGL::CurvesPrimitive::UseGLLines( curvesUseGLLines->getChild<BoolPlug>( "enabled" )->getValue() ),
-				curvesUseGLLines->getChild<BoolPlug>( "override" )->getValue()
-			);
-
-			const ValuePlug *curvesInterpolate = curves->getChild<ValuePlug>( "interpolate" );
-			baseState->add(
-				/// \todo As a general rule we strive for a one-to-one mapping between cortex/gaffer/ui,
-				/// but in this case IgnoreBasis is far too technical a term. Consider changing the name
-				/// in Cortex.
-				new IECoreGL::CurvesPrimitive::IgnoreBasis( !curvesInterpolate->getChild<BoolPlug>( "enabled" )->getValue() ),
-				curvesInterpolate->getChild<BoolPlug>( "override" )->getValue()
-			);
-
-			const ValuePlug *pointsPrimitives = drawingModePlug()->getChild<ValuePlug>( "pointsPrimitives" );
-			const ValuePlug *pointsPrimitivesUseGLPoints = pointsPrimitives->getChild<ValuePlug>( "useGLPoints" );
-			baseState->add(
-				new IECoreGL::PointsPrimitive::UseGLPoints(
-					pointsPrimitivesUseGLPoints->getChild<BoolPlug>( "enabled" )->getValue() ? IECoreGL::ForAll : IECoreGL::ForPointsOnly
-				),
-				pointsPrimitivesUseGLPoints->getChild<BoolPlug>( "override" )->getValue()
-			);
-
-			sceneGadget()->renderRequestSignal()( sceneGadget() );
+			sceneGadget()->setOpenGLOptions( options.get() );
 		}
 
 		SceneView *m_view;
@@ -371,14 +363,6 @@ class SceneView::Grid : public boost::signals::trackable
 			m_gadget->setMinimumExpansionDepth( 1 );
 			m_gadget->setScene( m_node->outPlug() );
 
-			// Turn off line smoothing because we're using MSAA in the
-			// viewer anyway, and line smoothing doesn't interact well
-			// with it on all drivers.
-			m_gadget->baseState()->add(
-				new IECoreGL::LineSmoothingStateComponent( false ),
-				/* override = */ true
-			);
-
 			view->viewportGadget()->setChild( "__grid", m_gadget );
 
 			view->plugDirtiedSignal().connect( boost::bind( &Grid::plugDirtied, this, ::_1 ) );
@@ -396,12 +380,12 @@ class SceneView::Grid : public boost::signals::trackable
 			return m_view->getChild<Gaffer::ValuePlug>( "grid" );
 		}
 
-		Gadget *gadget()
+		SceneGadget *gadget()
 		{
 			return m_gadget.get();
 		}
 
-		const Gadget *gadget() const
+		const SceneGadget *gadget() const
 		{
 			return m_gadget.get();
 		}
@@ -724,6 +708,22 @@ class CameraOverlay : public GafferUI::Gadget
 			return m_resolutionGate;
 		}
 
+		// Specified in raster space.
+		void setApertureGate( const Box2f &apertureGate )
+		{
+			if( apertureGate == m_apertureGate )
+			{
+				return;
+			}
+			m_apertureGate = apertureGate;
+			requestRender();
+		}
+
+		const Box2f &getApertureGate() const
+		{
+			return m_apertureGate;
+		}
+
 		// Specified in 0-1 space relative to resolution gate
 		void setCropWindow( const Box2f &cropWindow )
 		{
@@ -779,7 +779,7 @@ class CameraOverlay : public GafferUI::Gadget
 				return Gadget::doRenderLayer( layer, style );
 			}
 
-			if( IECoreGL::Selector::currentSelector() || m_resolutionGate.isEmpty() )
+			if( IECoreGL::Selector::currentSelector() || ( m_resolutionGate.isEmpty() && m_apertureGate.isEmpty() ) )
 			{
 				return;
 			}
@@ -789,6 +789,42 @@ class CameraOverlay : public GafferUI::Gadget
 
 			glPushAttrib( GL_CURRENT_BIT | GL_LINE_BIT | GL_ENABLE_BIT );
 
+			if( !m_apertureGate.isEmpty() )
+			{
+				glEnable( GL_LINE_SMOOTH );
+				glColor4f( 0.4, 0, 0, 1.0 );
+				glLineWidth( 0.5f );
+				style->renderRectangle( m_apertureGate );
+				glLineWidth( 2.0f );
+
+				// The start and end distance for the crop marks
+				const float startDist = 5;
+				const float endDist = 20;
+
+				for( int up = 0; up < 2; up++ )
+				{
+					for( int right = 0; right < 2; right++ )
+					{
+						V2f curCorner(
+							right ? m_apertureGate.max.x : m_apertureGate.min.x,
+							up ? m_apertureGate.max.y : m_apertureGate.min.y
+						);
+
+						V2f dirX( right ? 1 : -1, 0 );
+						V2f dirY( 0, up ? 1 : -1 );
+
+						style->renderRectangle(
+							Box2f( curCorner + startDist * dirY, curCorner + endDist * dirY )
+						);
+						style->renderRectangle(
+							Box2f( curCorner + startDist * dirX, curCorner + endDist * dirX )
+						);
+					}
+				}
+			}
+
+			if( !m_resolutionGate.isEmpty() )
+			{
 				glEnable( GL_LINE_SMOOTH );
 				glLineWidth( 1.5f );
 
@@ -832,6 +868,7 @@ class CameraOverlay : public GafferUI::Gadget
 					style->renderText( Style::LabelText, m_caption );
 
 				glPopMatrix();
+			}
 
 			glPopAttrib();
 		}
@@ -839,6 +876,7 @@ class CameraOverlay : public GafferUI::Gadget
 	private :
 
 		Box2f m_resolutionGate;
+		Box2f m_apertureGate;
 		Box2f m_cropWindow;
 		std::string m_caption;
 		std::string m_icon;
@@ -857,7 +895,7 @@ class SceneView::Camera : public boost::signals::trackable
 		Camera( SceneView *view )
 			:	m_view( view ),
 				m_framed( false ),
-				m_standardOptions( new StandardOptions ),
+				m_lightToCamera( new LightToCamera ),
 				m_originalCamera( m_view->viewportGadget()->getCamera()->copy() ),
 				m_originalCameraTransform( m_view->viewportGadget()->getCameraTransform() ),
 				m_originalCenterOfInterest( m_view->viewportGadget()->getCenterOfInterest() ),
@@ -866,7 +904,6 @@ class SceneView::Camera : public boost::signals::trackable
 				m_viewportCameraDirty( true ),
 				m_overlay( new CameraOverlay )
 		{
-
 			// Set up our plugs
 
 			ValuePlugPtr plug = new ValuePlug( "camera", Plug::In, Plug::Default & ~Plug::AcceptsInputs );
@@ -877,7 +914,7 @@ class SceneView::Camera : public boost::signals::trackable
 					Plug::In,
 					54.43f,
 					0.01f,
-					Imath::limits<float>::max(),
+					179.99f,
 					Plug::Default & ~Plug::AcceptsInputs
 				)
 			);
@@ -902,19 +939,10 @@ class SceneView::Camera : public boost::signals::trackable
 			SetFilterPtr lightFilter = new SetFilter;
 			lightFilter->setExpressionPlug()->setValue( "__lights" );
 
-			LightToCameraPtr lightConverter = new LightToCamera;
-			lightConverter->inPlug()->setInput( view->inPlug<ScenePlug>() );
-			lightConverter->filterPlug()->setInput( lightFilter->outPlug() );
+			m_lightToCamera->inPlug()->setInput( view->inPlug<ScenePlug>() );
+			m_lightToCamera->filterPlug()->setInput( lightFilter->outPlug() );
 
 			m_internalNodes.push_back( lightFilter );
-			m_internalNodes.push_back( lightConverter );
-
-			// We use a standard options node to disable overscan because we don't want it applied
-			// by RendererAlgo::applyCameraGlobals.
-
-			m_standardOptions->inPlug()->setInput( lightConverter->outPlug() );
-			m_standardOptions->optionsPlug()->getChild<CompoundDataPlug::MemberPlug>( "overscan" )->enabledPlug()->setValue( true );
-			m_standardOptions->optionsPlug()->getChild<CompoundDataPlug::MemberPlug>( "overscan" )->valuePlug<BoolPlug>()->setValue( false );
 
 			// Set up our gadgets
 
@@ -923,7 +951,7 @@ class SceneView::Camera : public boost::signals::trackable
 
 			// Connect to the signals we need
 
-			m_standardOptions->plugDirtiedSignal().connect( boost::bind( &Camera::plugDirtied, this, ::_1 ) );
+			m_lightToCamera->plugDirtiedSignal().connect( boost::bind( &Camera::plugDirtied, this, ::_1 ) );
 			m_plugSetConnection = view->plugSetSignal().connect( boost::bind( &Camera::plugSet, this, ::_1 ) );
 			view->plugDirtiedSignal().connect( boost::bind( &Camera::plugDirtied, this, ::_1 ) );
 			view->viewportGadget()->preRenderSignal().connect( boost::bind( &Camera::preRender, this ) );
@@ -956,7 +984,7 @@ class SceneView::Camera : public boost::signals::trackable
 
 		const GafferScene::ScenePlug *scenePlug() const
 		{
-			return m_standardOptions->outPlug();
+			return m_lightToCamera->outPlug();
 		}
 
 		Gaffer::FloatPlug *fieldOfViewPlug()
@@ -989,6 +1017,11 @@ class SceneView::Camera : public boost::signals::trackable
 			return plug()->getChild<StringPlug>( 3 );
 		}
 
+		SceneGadget *sceneGadget()
+		{
+			return static_cast<SceneGadget *>( m_view->viewportGadget()->getPrimaryChild() );
+		}
+
 		void connectToViewContext()
 		{
 			m_contextChangedConnection = m_view->getContext()->changedSignal().connect( boost::bind( &Camera::contextChanged, this, ::_2 ) );
@@ -1015,10 +1048,6 @@ class SceneView::Camera : public boost::signals::trackable
 				return;
 			}
 
-			updateLookThroughCamera();
-
-			CameraPtr camera = m_lookThroughCamera ? m_originalCamera : m_view->viewportGadget()->getCamera()->copy();
-
 			V2f clippingPlanes = clippingPlanesPlug()->getValue();
 			if( clippingPlanes[1] < clippingPlanes[0] )
 			{
@@ -1028,13 +1057,17 @@ class SceneView::Camera : public boost::signals::trackable
 			{
 				clippingPlanes[1] += 0.001;
 			}
-			camera->parameters()["clippingPlanes"] = new V2fData( clippingPlanes );
+			m_originalCamera->setClippingPlanes( clippingPlanes );
 
-			camera->parameters()["projection:fov"] = new FloatData( fieldOfViewPlug()->getValue() );
+			// Adjust aperture to match FOV
+			m_originalCamera->setFocalLengthFromFieldOfView( fieldOfViewPlug()->getValue() );
 
 			if( !m_lookThroughCamera )
 			{
-				m_view->viewportGadget()->setCamera( camera.get() );
+				// We don't want to call updateLookThroughCamera, because this would overwrite
+				// the camera transform, which may be currently edited by the viewportGadget,
+				// so instead we manually update just the camera
+				m_view->viewportGadget()->setCamera( m_originalCamera.get() );
 			}
 		}
 
@@ -1078,15 +1111,10 @@ class SceneView::Camera : public boost::signals::trackable
 			{
 				BlockedConnection plugValueSetBlocker( m_plugSetConnection );
 
-				const IECoreScene::Camera *camera = m_view->viewportGadget()->getCamera();
-				if( auto clippingPlanes = camera->parametersData()->member<V2fData>( "clippingPlanes" ) )
-				{
-					clippingPlanesPlug()->setValue( clippingPlanes->readable() );
-				}
-				if( auto fieldOfView = camera->parametersData()->member<FloatData>( "projection:fov" ) )
-				{
-					fieldOfViewPlug()->setValue( fieldOfView->readable() );
-				}
+				IECoreScene::ConstCameraPtr camera = m_view->viewportGadget()->getCamera();
+				clippingPlanesPlug()->setValue( camera->getClippingPlanes() );
+
+				fieldOfViewPlug()->setValue( camera->calculateFieldOfView()[0] );
 			}
 		}
 
@@ -1119,7 +1147,8 @@ class SceneView::Camera : public boost::signals::trackable
 				m_view->viewportGadget()->setCameraTransform( m_originalCameraTransform );
 				m_view->viewportGadget()->setCenterOfInterest( m_originalCenterOfInterest );
 				m_view->viewportGadget()->setCameraEditable( true );
-				m_view->hideFilter()->pathsPlug()->setToDefault();
+				m_view->deleteObjectFilter()->pathsPlug()->setToDefault();
+				sceneGadget()->setBlockingPaths( IECore::PathMatcher() );
 				return;
 			}
 
@@ -1164,13 +1193,13 @@ class SceneView::Camera : public boost::signals::trackable
 					cameraTransform = scenePlug()->fullTransform( cameraPath );
 
 					IECoreScene::CameraPtr camera = constCamera->copy();
-					RendererAlgo::applyCameraGlobals( camera.get(), globals.get() );
+					RendererAlgo::applyCameraGlobals( camera.get(), globals.get(), scenePlug() );
 					m_lookThroughCamera = camera;
 				}
 				else
 				{
 					CameraPtr defaultCamera = new IECoreScene::Camera;
-					RendererAlgo::applyCameraGlobals( defaultCamera.get(), globals.get() );
+					RendererAlgo::applyCameraGlobals( defaultCamera.get(), globals.get(), scenePlug() );
 					m_lookThroughCamera = defaultCamera;
 				}
 			}
@@ -1178,9 +1207,7 @@ class SceneView::Camera : public boost::signals::trackable
 			{
 				// If an invalid path has been entered for the camera, computation will fail.
 				// Record the error to go in the caption, and make a default camera to lock to.
-				CameraPtr defaultCamera = new IECoreScene::Camera;
-				defaultCamera->addStandardParameters();
-				m_lookThroughCamera = defaultCamera;
+				m_lookThroughCamera = new IECoreScene::Camera();
 				cameraSet = new PathMatcherData;
 				globals = new CompoundObject;
 				errorMessage = e.what();
@@ -1189,27 +1216,34 @@ class SceneView::Camera : public boost::signals::trackable
 			m_view->viewportGadget()->setCameraTransform( cameraTransform );
 
 			m_view->viewportGadget()->setCameraEditable( false );
-			m_view->hideFilter()->pathsPlug()->setToDefault();
+			m_view->deleteObjectFilter()->pathsPlug()->setToDefault();
 
-			// When looking through a camera, we hide the camera, since the overlay
+			// When looking through a camera, we delete the camera, since the overlay
 			// tells us everything we need to know about the camera. If looking through
 			// something else, such as a light, we may want to see the viewport
 			// visualisation of what we're looking through.
 			const bool isCamera = cameraSet->readable().match( cameraPathString );
 			if( isCamera )
 			{
-				m_view->hideFilter()->pathsPlug()->setValue(
+				m_view->deleteObjectFilter()->pathsPlug()->setValue(
 					new StringVectorData( { cameraPathString } )
 				);
 			}
 
+			// Make sure that the camera and anything parented below it are always
+			// updated before drawing, rather than being updated asynchronously with
+			// the rest of the scene. This keeps the visualisations of lights in sync
+			// with the position of the look-through camera.
+
+			PathMatcher blockingPaths;
+			blockingPaths.addPath( cameraPathString );
+			sceneGadget()->setBlockingPaths( blockingPaths );
+
 			// Set up the static parts of the overlay. The parts that change when the
 			// viewport changes will be updated in updateViewportCameraAndOverlay().
-
-			const Box2fData *cropWindowData = globals->member<Box2fData>( "option:render:cropWindow" );
-			if( isCamera && cropWindowData )
+			if( isCamera && m_lookThroughCamera->hasCropWindow() )
 			{
-				m_overlay->setCropWindow( cropWindowData->readable() );
+				m_overlay->setCropWindow( m_lookThroughCamera->getCropWindow() );
 			}
 			else
 			{
@@ -1218,8 +1252,8 @@ class SceneView::Camera : public boost::signals::trackable
 
 			if( errorMessage.empty() )
 			{
-				const V2i resolution = m_lookThroughCamera->parametersData()->member<V2iData>( "resolution" )->readable();
-				const float pixelAspectRatio = m_lookThroughCamera->parametersData()->member<FloatData>( "pixelAspectRatio" )->readable();
+				const V2i resolution = m_lookThroughCamera->getResolution();
+				const float pixelAspectRatio = m_lookThroughCamera->getPixelAspectRatio();
 				m_overlay->setCaption( boost::str(
 					boost::format( "%dx%d, %.3f, %s" ) %
 						resolution.x % resolution.y %
@@ -1245,6 +1279,7 @@ class SceneView::Camera : public boost::signals::trackable
 			if( !m_lookThroughCamera )
 			{
 				m_overlay->setResolutionGate( Box2f() );
+				m_overlay->setApertureGate( Box2f() );
 				m_overlay->setVisible( false );
 				return;
 			}
@@ -1254,7 +1289,6 @@ class SceneView::Camera : public boost::signals::trackable
 			// the resolution gate centrally with a border around it. Start by figuring
 			// out where we'll draw the resolution gate in raster space.
 
-			IECoreScene::CameraPtr camera = m_lookThroughCamera->copy();
 
 			const float borderPixels = 40;
 			const V2f viewport = m_view->viewportGadget()->getViewport();
@@ -1264,40 +1298,72 @@ class SceneView::Camera : public boost::signals::trackable
 			);
 			const float insetViewportAspectRatio = insetViewport.x / insetViewport.y;
 
-			const V2f resolution = camera->parametersData()->member<V2iData>( "resolution" )->readable();
-			const float pixelAspectRatio = camera->parametersData()->member<FloatData>( "pixelAspectRatio" )->readable();
+			const V2f resolution = m_lookThroughCamera->getResolution();
+			const float pixelAspectRatio = fabsf( m_lookThroughCamera->getPixelAspectRatio() );
 
-			V2f resolutionGateSize = resolution;
-			resolutionGateSize.x *= pixelAspectRatio;
-			const float resolutionGateAspectRatio = resolutionGateSize.x / resolutionGateSize.y;
-			if( resolutionGateAspectRatio > insetViewportAspectRatio )
+			Box2f apertureGate = m_lookThroughCamera->frustum( IECoreScene::Camera::Distort );
+			Box2f resolutionGate = m_lookThroughCamera->frustum( m_lookThroughCamera->getFilmFit(),
+				resolution.x * pixelAspectRatio / resolution.y
+			);
+
+			// We want the aspect ratio of the resolution gate to match the aspect ratio of the resolution
+			// When using Distort film fit, they won't match by default, so we apply this squish factor
+			// to the resolutionGate, the apertureGate, and the aperture of the viewportCamera.  This keeps
+			// everything aligned, with the correct aspect ratio ( though the objects in the view are now
+			// distorted )
+			float horizSquish = ( resolutionGate.size().x * resolution.y ) / ( resolutionGate.size().y * resolution.x * pixelAspectRatio );
+
+			apertureGate.min.x /= horizSquish;
+			apertureGate.max.x /= horizSquish;
+			resolutionGate.min.x /= horizSquish;
+			resolutionGate.max.x /= horizSquish;
+
+			// Find the screen window box that we want to be visible in the viewport
+			Box2f viewportTarget = resolutionGate;
+			if( m_lookThroughCamera->getFilmFit() != IECoreScene::Camera::Horizontal )
 			{
-				// fit horizontally
-				resolutionGateSize *= insetViewport.x / resolutionGateSize.x;
+				// Unless we're doing a horizontal fit that ignores it,
+				// enlarge the viewport to see the vertical aperture
+				viewportTarget.min.y = min( viewportTarget.min.y, apertureGate.min.y );
+				viewportTarget.max.y = max( viewportTarget.max.y, apertureGate.max.y );
 			}
-			else
+			if( m_lookThroughCamera->getFilmFit() != IECoreScene::Camera::Vertical )
 			{
-				// fit vertically
-				resolutionGateSize *= insetViewport.y / resolutionGateSize.y;
+				// Unless we're doing a vertical fit that ignores it,
+				// enlarge the viewport to see the horizontal aperture
+				viewportTarget.min.x = min( viewportTarget.min.x, apertureGate.min.x );
+				viewportTarget.max.x = max( viewportTarget.max.x, apertureGate.max.x );
 			}
 
-			const V2f offset = ( viewport - resolutionGateSize ) / 2.0f;
+			Box2f insetScreenWindow = IECoreScene::Camera::fitWindow( viewportTarget, IECoreScene::Camera::Fit, insetViewportAspectRatio );
+			V2f insetCenter = insetScreenWindow.center();
+			V2f insetScale = insetViewport / viewport;
 
-			m_overlay->setResolutionGate( Box2f( V2f( offset ), V2f( resolutionGateSize + offset ) ) );
+			// Compute a normalized screen window, large enough that the viewportTarget is inside it,
+			// taking the inset border into account
+			Box2f viewportScreenWindow;
+			viewportScreenWindow.min = ( insetScreenWindow.min - insetCenter ) / insetScale + insetCenter;
+			viewportScreenWindow.max = ( insetScreenWindow.max - insetCenter ) / insetScale + insetCenter;
+
+			m_overlay->setResolutionGate( Box2f(
+					( resolutionGate.min - viewportScreenWindow.min ) / viewportScreenWindow.size() * viewport,
+					( resolutionGate.max - viewportScreenWindow.min ) / viewportScreenWindow.size() * viewport
+			) );
+			m_overlay->setApertureGate( Box2f(
+					( apertureGate.min - viewportScreenWindow.min ) / viewportScreenWindow.size() * viewport,
+					( apertureGate.max - viewportScreenWindow.min ) / viewportScreenWindow.size() * viewport
+			) );
 			m_overlay->setVisible( true );
 
-			// Now modify the camera, so that the view through the resolution gate we've calculated
-			// represents the rendered image - this means extending the resolution and screen
-			// window to account for the border area outside the resolution gate.
-
-			Box2f &screenWindow = camera->parametersData()->member<Box2fData>( "screenWindow" )->writable();
-			const V2f newScreenWindowSize = screenWindow.size() * viewport / resolutionGateSize;
-			const V2f screenWindowCenter = screenWindow.center();
-			screenWindow.min = screenWindowCenter - newScreenWindowSize / 2.0f;
-			screenWindow.max = screenWindowCenter + newScreenWindowSize / 2.0f;
-
-			camera->parameters()["resolution"] = new V2iData( m_view->viewportGadget()->getViewport() );
-			m_view->viewportGadget()->setCamera( camera.get() );
+			// Now set up a camera that can see all of the aperture and resolution gates.
+			IECoreScene::CameraPtr viewportCamera = new IECoreScene::Camera();
+			viewportCamera->setFilmFit( IECoreScene::Camera::Distort );
+			viewportCamera->setProjection( m_lookThroughCamera->getProjection() );
+			viewportCamera->setFocalLength( 1.0f );
+			viewportCamera->setAperture( viewportScreenWindow.size() * V2f( horizSquish, 1.0f ) );
+			viewportCamera->setApertureOffset( viewportScreenWindow.center() * V2f( horizSquish, 1.0f ) );
+			viewportCamera->setClippingPlanes( m_lookThroughCamera->getClippingPlanes() );
+			m_view->viewportGadget()->setCamera( viewportCamera.get() );
 			m_view->viewportGadget()->setCameraEditable( false );
 
 			m_viewportCameraDirty = false;
@@ -1306,7 +1372,7 @@ class SceneView::Camera : public boost::signals::trackable
 		SceneView *m_view;
 		bool m_framed;
 
-		StandardOptionsPtr m_standardOptions;
+		LightToCameraPtr m_lightToCamera;
 
 		/// Nodes used in an internal processing network.
 		/// Don't need to do anything with them once their set up, but need to hold onto a pointer
@@ -1318,6 +1384,8 @@ class SceneView::Camera : public boost::signals::trackable
 
 		/// The default viewport camera - we store this so we can
 		/// return to it after looking through a scene camera.
+		// TODO - "original" seems like a weird names for this, since it doesn't stay original, it gets
+		// whenever we move the viewport camera.  What about m_freeCamera?
 		IECoreScene::CameraPtr m_originalCamera;
 		M44f m_originalCameraTransform;
 		float m_originalCenterOfInterest;
@@ -1352,16 +1420,22 @@ SceneView::SceneView( const std::string &name )
 	// set up a sensible default camera
 
 	IECoreScene::CameraPtr camera = new IECoreScene::Camera();
-	camera->parameters()["projection"] = new IECore::StringData( "perspective" );
-	camera->parameters()["projection:fov"] = new IECore::FloatData( 54.43 ); // 35 mm focal length
+	camera->setProjection( "perspective" );
+
+	// Some default 35mm lens geometry
+	camera->setFocalLength( 35.0f );
+	camera->setAperture( V2f( 36.0f, 24.0f ) );
+
+	viewportGadget()->setPlanarMovement( false );
 	viewportGadget()->setCamera( camera.get() );
 
+	// NOTE: This offset of 1.0 in Z is kind weird - but it will never show up in practice.
+	// We rely on SceneView::Camera to start with m_framed set to false, so that it will
+	// reposition itself during preRender()
 	M44f matrix;
 	matrix.translate( V3f( 0, 0, 1 ) );
 	matrix.rotate( IECore::degreesToRadians( V3f( -25, 45, 0 ) ) );
 	viewportGadget()->setCameraTransform( matrix );
-
-	viewportGadget()->setOrthographic3D( true );
 
 	// add plugs and signal handling for them
 
@@ -1378,6 +1452,7 @@ SceneView::SceneView( const std::string &name )
 
 	m_sceneGadget->setContext( getContext() );
 
+	m_selectionMask.reset( new SelectionMask( this ) );
 	m_drawingMode.reset( new DrawingMode( this ) );
 	m_shadingMode.reset( new ShadingMode( this ) );
 	m_camera.reset( new Camera( this ) );
@@ -1392,23 +1467,21 @@ SceneView::SceneView( const std::string &name )
 	ScenePlugPtr preprocessorInput = new ScenePlug( "in" );
 	preprocessor->addChild( preprocessorInput );
 
-	// add a node for hiding things
+	// add a node for deleting objects
 
-	StandardAttributesPtr hide = new StandardAttributes( "hide" );
-	hide->attributesPlug()->getChild<ValuePlug>( "visibility" )->getChild<BoolPlug>( "enabled" )->setValue( true );
-	hide->attributesPlug()->getChild<ValuePlug>( "visibility" )->getChild<BoolPlug>( "value" )->setValue( false );
+	DeleteObjectPtr deleteObject = new DeleteObject( "deleteObject" );
 
-	preprocessor->addChild( hide );
-	hide->inPlug()->setInput( preprocessorInput );
+	preprocessor->addChild( deleteObject );
+	deleteObject->inPlug()->setInput( preprocessorInput );
 
-	PathFilterPtr hideFilter = new PathFilter( "hideFilter" );
-	preprocessor->addChild( hideFilter );
-	hide->filterPlug()->setInput( hideFilter->outPlug() );
+	PathFilterPtr deleteObjectFilter = new PathFilter( "deleteObjectFilter" );
+	preprocessor->addChild( deleteObjectFilter );
+	deleteObject->filterPlug()->setInput( deleteObjectFilter->outPlug() );
 
 	// add in the node from the ShadingMode
 
 	preprocessor->addChild( m_shadingMode->preprocessor() );
-	m_shadingMode->preprocessor()->inPlug()->setInput( hide->outPlug() );
+	m_shadingMode->preprocessor()->inPlug()->setInput( deleteObject->outPlug() );
 
 	// make the output for the preprocessor
 
@@ -1468,14 +1541,14 @@ const Gaffer::ValuePlug *SceneView::gnomonPlug() const
 	return m_gnomon->plug();
 }
 
-GafferScene::PathFilter *SceneView::hideFilter()
+GafferScene::PathFilter *SceneView::deleteObjectFilter()
 {
-	return getPreprocessor()->getChild<PathFilter>( "hideFilter" );
+	return getPreprocessor()->getChild<PathFilter>( "deleteObjectFilter" );
 }
 
-const GafferScene::PathFilter *SceneView::hideFilter() const
+const GafferScene::PathFilter *SceneView::deleteObjectFilter() const
 {
-	return getPreprocessor()->getChild<PathFilter>( "hideFilter" );
+	return getPreprocessor()->getChild<PathFilter>( "deleteObjectFilter" );
 }
 
 void SceneView::setContext( Gaffer::ContextPtr context )
@@ -1527,8 +1600,9 @@ Imath::Box3f SceneView::framingBound() const
 	}
 
 	b = m_sceneGadget->bound();
-	if( m_grid->gadget()->getVisible() )
+	if( b.isEmpty() && m_grid->gadget()->getVisible() )
 	{
+		m_grid->gadget()->waitForCompletion();
 		b.extendBy( m_grid->gadget()->bound() );
 	}
 
@@ -1566,6 +1640,10 @@ bool SceneView::keyPress( GafferUI::GadgetPtr gadget, const GafferUI::KeyEvent &
 		{
 			viewportGadget()->fitClippingPlanes( framingBound() );
 		}
+	}
+	else if( event.key == "Escape" )
+	{
+		m_sceneGadget->setPaused( true );
 	}
 
 	return false;

@@ -133,7 +133,7 @@ if moduleSearchPath.find( "arnold" ) :
 
 # 3delight nodes
 
-if moduleSearchPath.find( "nsi.so" ) and moduleSearchPath.find( "GafferDelight" ) :
+if moduleSearchPath.find( "nsi.py" ) and moduleSearchPath.find( "GafferDelight" ) :
 
 	try :
 
@@ -290,6 +290,7 @@ nodeMenu.append( "/Scene/Source/Instancer", GafferScene.Instancer )
 nodeMenu.append( "/Scene/Object/Primitive Variables", GafferScene.PrimitiveVariables, searchText = "PrimitiveVariables" )
 nodeMenu.append( "/Scene/Object/Delete Primitive Variables", GafferScene.DeletePrimitiveVariables, searchText = "DeletePrimitiveVariables" )
 nodeMenu.append( "/Scene/Object/Resample Primitive Variables", GafferScene.ResamplePrimitiveVariables, searchText = "ResamplePrimitiveVariables" )
+nodeMenu.append( "/Scene/Object/Collect Primitive Variables", GafferScene.CollectPrimitiveVariables, searchText = "CollectPrimitiveVariables" )
 nodeMenu.append( "/Scene/Object/Mesh Type", GafferScene.MeshType, searchText = "MeshType" )
 nodeMenu.append( "/Scene/Object/Points Type", GafferScene.PointsType, searchText = "PointsType" )
 nodeMenu.append( "/Scene/Object/Mesh To Points", GafferScene.MeshToPoints, searchText = "MeshToPoints" )
@@ -301,26 +302,27 @@ nodeMenu.append( "/Scene/Object/Mesh Tangents", GafferScene.MeshTangents, search
 nodeMenu.append( "/Scene/Object/Delete Faces", GafferScene.DeleteFaces, searchText = "DeleteFaces" )
 nodeMenu.append( "/Scene/Object/Delete Curves", GafferScene.DeleteCurves, searchText = "DeleteCurves" )
 nodeMenu.append( "/Scene/Object/Delete Points", GafferScene.DeletePoints, searchText = "DeletePoints" )
+nodeMenu.append( "/Scene/Object/Delete Object", GafferScene.DeleteObject, searchText = "DeleteObject" )
 nodeMenu.append( "/Scene/Object/Reverse Winding", GafferScene.ReverseWinding, searchText = "ReverseWinding" )
 nodeMenu.append( "/Scene/Object/Mesh Distortion", GafferScene.MeshDistortion, searchText = "MeshDistortion" )
+nodeMenu.append( "/Scene/Object/Camera Tweaks", GafferScene.CameraTweaks, searchText = "CameraTweaks" )
 nodeMenu.append( "/Scene/Attributes/Shader Assignment", GafferScene.ShaderAssignment, searchText = "ShaderAssignment" )
-nodeMenu.append( "/Scene/Attributes/Shader Switch", GafferScene.ShaderSwitch, searchText = "ShaderSwitch" )
 nodeMenu.append( "/Scene/Attributes/Standard Attributes", GafferScene.StandardAttributes, searchText = "StandardAttributes" )
 nodeMenu.append( "/Scene/Attributes/Custom Attributes", GafferScene.CustomAttributes, searchText = "CustomAttributes" )
 nodeMenu.append( "/Scene/Attributes/Delete Attributes", GafferScene.DeleteAttributes, searchText = "DeleteAttributes" )
 nodeMenu.append( "/Scene/Attributes/Attribute Visualiser", GafferScene.AttributeVisualiser, searchText = "AttributeVisualiser" )
 nodeMenu.append( "/Scene/Attributes/Light Tweaks", GafferScene.LightTweaks, searchText = "LightTweaks" )
+nodeMenu.append( "/Scene/Attributes/Copy Attributes", GafferScene.CopyAttributes, searchText = "CopyAttributes" )
+nodeMenu.append( "/Scene/Attributes/Collect Transforms", GafferScene.CollectTransforms, searchText = "CollectTransforms" )
 nodeMenu.append( "/Scene/Filters/Set Filter", GafferScene.SetFilter, searchText = "SetFilter" )
 nodeMenu.append( "/Scene/Filters/Path Filter", GafferScene.PathFilter, searchText = "PathFilter" )
 nodeMenu.append( "/Scene/Filters/Union Filter", GafferScene.UnionFilter, searchText = "UnionFilter" )
-nodeMenu.append( "/Scene/Filters/FilterSwitch", GafferScene.FilterSwitch, searchText = "FilterSwitch" )
 nodeMenu.append( "/Scene/Hierarchy/Group", GafferScene.Group )
 nodeMenu.append( "/Scene/Hierarchy/Parent", GafferScene.Parent )
 nodeMenu.append( "/Scene/Hierarchy/Duplicate", GafferScene.Duplicate )
 nodeMenu.append( "/Scene/Hierarchy/SubTree", GafferScene.SubTree ) #\todo - rename to 'Subtree' (node needs to change too)
 nodeMenu.append( "/Scene/Hierarchy/Prune", GafferScene.Prune )
 nodeMenu.append( "/Scene/Hierarchy/Isolate", GafferScene.Isolate )
-nodeMenu.append( "/Scene/Hierarchy/Switch", GafferScene.SceneSwitch, searchText = "SceneSwitch" )
 nodeMenu.append( "/Scene/Hierarchy/Collect", GafferScene.CollectScenes, searchText = "CollectScenes" )
 nodeMenu.append( "/Scene/Hierarchy/Encapsulate", GafferScene.Encapsulate )
 nodeMenu.append( "/Scene/Transform/Transform", GafferScene.Transform )
@@ -370,7 +372,6 @@ nodeMenu.append( "/Image/Filter/Erode", GafferImageUI.ErodeUI.nodeMenuCreateComm
 nodeMenu.append( "/Image/Filter/Dilate", GafferImageUI.DilateUI.nodeMenuCreateCommand )
 nodeMenu.append( "/Image/Merge/Merge", GafferImage.Merge )
 nodeMenu.append( "/Image/Merge/Mix", GafferImage.Mix )
-nodeMenu.append( "/Image/Merge/Switch", GafferImage.ImageSwitch, searchText = "ImageSwitch" )
 nodeMenu.append( "/Image/Transform/Resize", GafferImage.Resize )
 nodeMenu.append( "/Image/Transform/Transform", GafferImage.ImageTransform, searchText = "ImageTransform" )
 nodeMenu.append( "/Image/Transform/Crop", GafferImage.Crop, postCreator = GafferImageUI.CropUI.postCreate )
@@ -495,7 +496,7 @@ nodeMenu.append( "/Utility/BoxOut", Gaffer.BoxOut )
 nodeMenu.append( "/Utility/Reference", GafferUI.ReferenceUI.nodeMenuCreateCommand )
 nodeMenu.definition().append( "/Utility/Backdrop", { "command" : GafferUI.BackdropUI.nodeMenuCreateCommand } )
 nodeMenu.append( "/Utility/Dot", Gaffer.Dot )
-nodeMenu.append( "/Utility/Switch", functools.partial( Gaffer.SwitchComputeNode, "Switch" ) )
+nodeMenu.append( "/Utility/Switch", Gaffer.Switch )
 
 ## Miscellaneous UI
 ###########################################################################

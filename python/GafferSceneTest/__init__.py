@@ -126,6 +126,13 @@ from EncapsulateTest import EncapsulateTest
 from FilterPlugTest import FilterPlugTest
 from ReverseWindingTest import ReverseWindingTest
 from MeshDistortionTest import MeshDistortionTest
+from DeleteObjectTest import DeleteObjectTest
+from CopyAttributesTest import CopyAttributesTest
+from RenderControllerTest import RenderControllerTest
+from CollectPrimitiveVariablesTest import CollectPrimitiveVariablesTest
+from PrimitiveVariableExistsTest import PrimitiveVariableExistsTest
+from CollectTransformsTest import CollectTransformsTest
+from CameraTweaksTest import CameraTweaksTest
 
 from IECoreGLPreviewTest import *
 

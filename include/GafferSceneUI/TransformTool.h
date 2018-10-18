@@ -42,6 +42,8 @@
 
 #include "GafferScene/ScenePlug.h"
 
+#include "GafferUI/KeyEvent.h"
+
 #include "Gaffer/TransformPlug.h"
 
 namespace GafferSceneUI
@@ -64,6 +66,9 @@ class GAFFERSCENEUI_API TransformTool : public GafferSceneUI::SelectionTool
 			Parent,
 			World
 		};
+
+		Gaffer::FloatPlug *sizePlug();
+		const Gaffer::FloatPlug *sizePlug() const;
 
 		struct Selection
 		{
@@ -126,10 +131,16 @@ class GAFFERSCENEUI_API TransformTool : public GafferSceneUI::SelectionTool
 			/// Returns a matrix which converts from world
 			/// space in `scene` to `transformSpace`.
 			Imath::M44f sceneToTransformSpace() const;
+			/// Returns a matrix suitable for positioning
+			/// transform handles in `scene's` world space.
+			Imath::M44f orientedTransform( Orientation orientation ) const;
 
 		};
 
-		const Selection &selection() const;
+		const std::vector<Selection> &selection() const;
+
+		using SelectionChangedSignal = boost::signal<void (TransformTool &)>;
+		SelectionChangedSignal &selectionChangedSignal();
 
 		/// Returns the transform of the handles. Throws
 		/// if the selection is invalid because then the
@@ -159,10 +170,7 @@ class GAFFERSCENEUI_API TransformTool : public GafferSceneUI::SelectionTool
 		/// handles appropriately. Typically this means setting their
 		/// transform and matching their enabled state to the editability
 		/// of the selection.
-		virtual void updateHandles() = 0;
-
-		/// Utility that may be used from updateHandles().
-		Imath::M44f orientedTransform( Orientation orientation );
+		virtual void updateHandles( float rasterScale ) = 0;
 
 		/// Must be called by derived classes when they begin
 		/// a drag.
@@ -174,6 +182,10 @@ class GAFFERSCENEUI_API TransformTool : public GafferSceneUI::SelectionTool
 		/// derived classes.
 		std::string undoMergeGroup() const;
 
+		/// Utilities to help derived classes update plug values.
+		static bool canSetValueOrAddKey( const Gaffer::FloatPlug *plug );
+		static void setValueOrAddKey( Gaffer::FloatPlug *plug, float time, float value );
+
 	private :
 
 		void connectToViewContext();
@@ -182,13 +194,16 @@ class GAFFERSCENEUI_API TransformTool : public GafferSceneUI::SelectionTool
 		void metadataChanged( IECore::InternedString key );
 		void updateSelection() const;
 		void preRender();
+		bool keyPress( const GafferUI::KeyEvent &event );
 
 		boost::signals::scoped_connection m_contextChangedConnection;
 
 		GafferUI::GadgetPtr m_handles;
-		mutable Selection m_selection;
-		mutable bool m_selectionDirty;
 		bool m_handlesDirty;
+
+		mutable std::vector<Selection> m_selection;
+		mutable bool m_selectionDirty;
+		SelectionChangedSignal m_selectionChangedSignal;
 
 		bool m_dragging;
 		int m_mergeGroupId;
@@ -196,6 +211,8 @@ class GAFFERSCENEUI_API TransformTool : public GafferSceneUI::SelectionTool
 		static size_t g_firstPlugIndex;
 
 };
+
+IE_CORE_DECLAREPTR( TransformTool )
 
 } // namespace GafferSceneUI
 

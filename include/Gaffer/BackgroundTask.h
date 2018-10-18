@@ -91,6 +91,9 @@ class GAFFER_API BackgroundTask : public boost::noncopyable
 		/// Blocks until the background call returns, either through
 		/// cancellation or running to completion.
 		void wait();
+		/// As above, but times out after the specified number of
+		/// seconds. Returns true on success, and false on timeout.
+		bool waitFor( float seconds );
 		/// Utility to call `cancel()` then `wait()`.
 		void cancelAndWait();
 
@@ -122,8 +125,10 @@ class GAFFER_API BackgroundTask : public boost::noncopyable
 		// Called by `Action` to ensure that any related tasks are cancelled
 		// before an edit is made to `actionSubject`.
 		static void cancelAffectedTasks( const GraphComponent *actionSubject );
+		static void cancelAllTasks();
 		friend class Action;
 		friend class ScriptNode;
+		friend class Process;
 
 		// Function to be executed.
 		Function m_function;

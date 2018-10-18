@@ -114,8 +114,8 @@ class GAFFERSCENEUI_API SceneView : public GafferUI::View
 	private :
 
 		// The filter for a preprocessing node used to hide things.
-		GafferScene::PathFilter *hideFilter();
-		const GafferScene::PathFilter *hideFilter() const;
+		GafferScene::PathFilter *deleteObjectFilter();
+		const GafferScene::PathFilter *deleteObjectFilter() const;
 
 		Imath::Box3f framingBound() const;
 
@@ -127,6 +127,8 @@ class GAFFERSCENEUI_API SceneView : public GafferUI::View
 
 		SceneGadgetPtr m_sceneGadget;
 
+		class SelectionMask;
+		std::unique_ptr<SelectionMask> m_selectionMask;
 		class DrawingMode;
 		std::unique_ptr<DrawingMode> m_drawingMode;
 		class ShadingMode;

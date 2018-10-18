@@ -90,6 +90,12 @@ void backgroundTaskWait( BackgroundTask &b )
 	b.wait();
 }
 
+bool backgroundTaskWaitFor( BackgroundTask &b, float seconds )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	return b.waitFor( seconds );
+}
+
 void backgroundTaskCancelAndWait( BackgroundTask &b )
 {
 	IECorePython::ScopedGILRelease gilRelease;
@@ -122,30 +128,12 @@ struct GILReleaseUIThreadFunction
 
 };
 
-struct CallOnUIThreadSlotCaller
-{
-	boost::signals::detail::unusable operator()( boost::python::object slot, ParallelAlgo::UIThreadFunction function )
-	{
-		boost::python::object pythonFunction = make_function(
-			GILReleaseUIThreadFunction( function ),
-			boost::python::default_call_policies(),
-			boost::mpl::vector<void>()
-		);
-		try
-		{
-			slot( pythonFunction );
-		}
-		catch( const boost::python::error_already_set &e )
-		{
-			IECorePython::ExceptionAlgo::translatePythonException();
-		}
-		return boost::signals::detail::unusable();
-	}
-};
-
 void callOnUIThread( boost::python::object f )
 {
 	auto fPtr = std::make_shared<boost::python::object>( f );
+
+	IECorePython::ScopedGILRelease gilRelease;
+
 	Gaffer::ParallelAlgo::callOnUIThread(
 		[fPtr]() mutable {
 			IECorePython::ScopedGILLock gilLock;
@@ -162,6 +150,43 @@ void callOnUIThread( boost::python::object f )
 				fPtr.reset();
 				IECorePython::ExceptionAlgo::translatePythonException();
 			}
+		}
+	);
+}
+
+void registerUIThreadCallHandler( boost::python::object handler )
+{
+	if( handler == object() )
+	{
+		// `None` passed - register null handler.
+		IECorePython::ScopedGILRelease gilRelease;
+		Gaffer::ParallelAlgo::registerUIThreadCallHandler( ParallelAlgo::UIThreadCallHandler() );
+		return;
+	}
+
+	// The lambda below needs to own a reference to `handler`,
+	// and in turn will be owned by the ParallelAlgo C++ API.
+	// Wrap `handler` so we acquire the GIL when the lambda is
+	// destroyed from C++.
+	auto handlerPtr = std::shared_ptr<boost::python::object>(
+		new boost::python::object( handler ),
+		[]( boost::python::object *o ) {
+			IECorePython::ScopedGILLock gilLock;
+			delete o;
+		}
+	);
+
+	IECorePython::ScopedGILRelease gilRelease;
+
+	Gaffer::ParallelAlgo::registerUIThreadCallHandler(
+		[handlerPtr] ( const ParallelAlgo::UIThreadFunction &function ) {
+			IECorePython::ScopedGILLock gilLock;
+			boost::python::object pythonFunction = make_function(
+				GILReleaseUIThreadFunction( function ),
+				boost::python::default_call_policies(),
+				boost::mpl::vector<void>()
+			);
+			(*handlerPtr)( pythonFunction );
 		}
 	);
 }
@@ -217,6 +242,7 @@ void GafferModule::bindParallelAlgo()
 			.def( "__init__", make_constructor( &backgroundTaskConstructor, default_call_policies() ) )
 			.def( "cancel", &backgroundTaskCancel )
 			.def( "wait", &backgroundTaskWait )
+			.def( "waitFor", &backgroundTaskWaitFor )
 			.def( "cancelAndWait", &backgroundTaskCancelAndWait )
 			.def( "status", &backgroundTaskStatus )
 		;
@@ -237,9 +263,7 @@ void GafferModule::bindParallelAlgo()
 	scope moduleScope( module );
 
 	def( "callOnUIThread", &callOnUIThread );
-	def( "callOnUIThreadSignal", &Gaffer::ParallelAlgo::callOnUIThreadSignal, boost::python::return_value_policy<boost::python::reference_existing_object>() );
+	def( "registerUIThreadCallHandler", &registerUIThreadCallHandler );
 	def( "callOnBackgroundThread", &callOnBackgroundThread );
-
-	SignalClass<Gaffer::ParallelAlgo::CallOnUIThreadSignal, DefaultSignalCaller<Gaffer::ParallelAlgo::CallOnUIThreadSignal>, CallOnUIThreadSlotCaller>( "CallOnUIThreadSignal" );
 
 }

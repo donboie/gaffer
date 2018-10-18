@@ -136,6 +136,8 @@ void frame( BackdropNodeGadget &b, object nodes )
 {
 	std::vector<Node *> n;
 	boost::python::container_utils::extend_container( n, nodes );
+
+	IECorePython::ScopedGILRelease gilRelease;
 	b.frame( n );
 }
 

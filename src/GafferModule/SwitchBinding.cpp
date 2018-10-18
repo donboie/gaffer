@@ -50,19 +50,18 @@ using namespace GafferBindings;
 namespace
 {
 
-template<typename T>
-void bind()
+void setup( Switch &s, const Plug &plug )
 {
-	DependencyNodeClass<T>()
-		.def( "setup", &T::setup )
-		.def( "activeInPlug", (Plug *(T::*)())&T::activeInPlug, return_value_policy<CastToIntrusivePtr>() )
-	;
+	IECorePython::ScopedGILRelease gilRelease;
+	s.setup( &plug );
 }
 
 } // namespace
 
 void GafferModule::bindSwitch()
 {
-	bind<SwitchDependencyNode>();
-	bind<SwitchComputeNode>();
+	DependencyNodeClass<Switch>()
+		.def( "setup", &setup )
+		.def( "activeInPlug", (Plug *(Switch::*)())&Switch::activeInPlug, return_value_policy<CastToIntrusivePtr>() )
+	;
 }

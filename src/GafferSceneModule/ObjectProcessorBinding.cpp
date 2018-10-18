@@ -40,6 +40,7 @@
 
 #include "GafferScene/DeleteCurves.h"
 #include "GafferScene/DeleteFaces.h"
+#include "GafferScene/DeleteObject.h"
 #include "GafferScene/DeletePoints.h"
 #include "GafferScene/LightToCamera.h"
 #include "GafferScene/MeshDistortion.h"
@@ -71,5 +72,6 @@ void GafferSceneModule::bindObjectProcessor()
 	GafferBindings::DependencyNodeClass<Parameters>();
 	GafferBindings::DependencyNodeClass<ReverseWinding>();
 	GafferBindings::DependencyNodeClass<GafferScene::MeshDistortion>();
+	GafferBindings::DependencyNodeClass<DeleteObject>();
 
 }

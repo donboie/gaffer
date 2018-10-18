@@ -61,6 +61,9 @@ def __visibilitySummary( plug ) :
 		if plug[childName+"Visibility"]["enabled"].getValue() :
 			info.append( label + ( " On" if plug[childName+"Visibility"]["value"].getValue() else " Off" ) )
 
+	if plug["shadowGroup"]["enabled"].getValue() :
+		info.append( "ShadowGroup Applied" )
+
 	return ", ".join( info )
 
 __transformTypeEnumNames = { "linear" : "Linear", "rotate_about_origin" : "RotateAboutOrigin",
@@ -90,8 +93,6 @@ def __shadingSummary( plug ) :
 def __subdivisionSummary( plug ) :
 
 	info = []
-	if plug["subdividePolygons"]["enabled"].getValue() :
-		info.append( "Subdivide Polygons " + ( "On" if plug["subdividePolygons"]["value"].getValue() else "Off" ) )
 	if plug["subdivIterations"]["enabled"].getValue() :
 		info.append( "Iterations %d" % plug["subdivIterations"]["value"].getValue() )
 	if plug["subdivAdaptiveError"]["enabled"].getValue() :
@@ -111,6 +112,8 @@ def __subdivisionSummary( plug ) :
 		)
 	if plug["subdivSmoothDerivs"]["enabled"].getValue() :
 		info.append( "Smooth Derivs " + ( "On" if plug["subdivSmoothDerivs"]["value"].getValue() else "Off" ) )
+	if plug["subdividePolygons"]["enabled"].getValue() :
+		info.append( "Subdivide Polygons " + ( "On" if plug["subdividePolygons"]["value"].getValue() else "Off" ) )
 
 	return ", ".join( info )
 
@@ -127,8 +130,14 @@ def __curvesSummary( plug ) :
 def __volumeSummary( plug ) :
 
 	info = []
+	if plug["volumeStepScale"]["enabled"].getValue() :
+		info.append( "Volume Step Scale %s" % GafferUI.NumericWidget.valueToString( plug["volumeStepScale"]["value"].getValue() ) )
 	if plug["volumeStepSize"]["enabled"].getValue() :
-		info.append( "Step %s" % GafferUI.NumericWidget.valueToString( plug["volumeStepSize"]["value"].getValue() ) )
+		info.append( "Volume Step Size %s" % GafferUI.NumericWidget.valueToString( plug["volumeStepSize"]["value"].getValue() ) )
+	if plug["shapeStepScale"]["enabled"].getValue() :
+		info.append( "Shape Step Scale %s" % GafferUI.NumericWidget.valueToString( plug["shapeStepScale"]["value"].getValue() ) )
+	if plug["shapeStepSize"]["enabled"].getValue() :
+		info.append( "Shape Step Size %s" % GafferUI.NumericWidget.valueToString( plug["shapeStepSize"]["value"].getValue() ) )
 	if plug["volumePadding"]["enabled"].getValue() :
 		info.append( "Padding %s" % GafferUI.NumericWidget.valueToString( plug["volumePadding"]["value"].getValue() ) )
 	if plug["velocityScale"]["enabled"].getValue() :
@@ -193,6 +202,20 @@ Gaffer.Metadata.registerNode(
 			"label", "Shadow",
 
 		],
+
+		"attributes.shadowGroup" : [
+
+			"description",
+			"""
+			The lights that cause this object to cast shadows.
+			Accepts a set expression or a space separated list of
+			lights. Use __lights to refer to the set of all lights.
+			""",
+
+			"layout:section", "Visibility",
+			"label", "Shadow Group",
+		],
+
 		"attributes.diffuseReflectionVisibility" : [
 
 			"description",
@@ -359,32 +382,6 @@ Gaffer.Metadata.registerNode(
 
 		# Subdivision
 
-		"attributes.subdividePolygons" : [
-
-			"description",
-			"""
-			Causes polygon meshes to be rendered with Arnold's
-			subdiv_type parameter set to "linear" rather than
-			"none". This can be used to increase detail when
-			using polygons with displacement shaders and/or mesh
-			lights.
-			""",
-
-			"layout:section", "Subdivision",
-			"label", "Subdivide Polygons",
-
-		],
-
-		"attributes.subdivType.value" : [
-
-			"preset:None", "none",
-			"preset:Linear", "linear",
-			"preset:Catclark", "catclark",
-
-			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
-
-		],
-
 		"attributes.subdivIterations" : [
 
 			"description",
@@ -531,6 +528,27 @@ Gaffer.Metadata.registerNode(
 
 		],
 
+		"attributes.subdividePolygons" : [
+
+			"description",
+			"""
+			Causes polygon meshes to be rendered with Arnold's
+			subdiv_type parameter set to "linear" rather than
+			"none". This can be used to increase detail when
+			using polygons with displacement shaders and/or mesh
+			lights.
+
+			> Caution : This is not equivalent to converting a polygon
+			> mesh into a subdivision surface. To render with Arnold's
+			> subdiv_type set to "catclark", you must use the MeshType
+			> node to convert polygon meshes into subdivision surfaces.
+			""",
+
+			"layout:section", "Subdivision",
+			"label", "Subdivide Polygons (Linear)",
+
+		],
+
 		# Curves
 
 		"attributes.curvesMode" : [
@@ -584,18 +602,56 @@ Gaffer.Metadata.registerNode(
 
 		# Volume
 
+		"attributes.volumeStepScale" : [
+
+			"description",
+			"""
+			Raymarching step size is calculated using this value 
+			multiplied by the volume voxel size or volumeStepSize if set.
+			""",
+
+			"layout:section", "Volume",
+			"label", "Volume Step Scale",
+
+		],
+
 		"attributes.volumeStepSize" : [
 
 			"description",
 			"""
-			The step size to take when raymarching volumes.
-			A non-zero value causes an object to be treated
-			as a volume container, and a value of 0 causes
-			an object to be treated as regular geometry.
+			Override the step size taken when raymarching volumes. 
+			If this value is disabled or zero then value is calculated from the voxel size.  
 			""",
 
 			"layout:section", "Volume",
-			"label", "Step Size",
+			"label", "Volume Step Size",
+
+		],
+
+		"attributes.shapeStepScale" : [
+
+			"description",
+			"""
+			Raymarching step size is calculated using this value 
+			multiplied by the shapeStepSize.
+			""",
+
+			"layout:section", "Volume",
+			"label", "Shape Step Scale",
+
+		],
+
+		"attributes.shapeStepSize" : [
+
+			"description",
+			"""
+			A non-zero value causes an object to be treated
+			as a volume container, and a value of 0 causes
+			an object to be treated as regular geometry.  
+			""",
+
+			"layout:section", "Volume",
+			"label", "Shape Step Size",
 
 		],
 

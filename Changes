@@ -1,3 +1,458 @@
+0.51.0.0
+========
+
+This release provides support for the latest versions of Arnold and 3Delight (5.2 and 1.1.7
+respectively), along with the usual mix of improvements and bug fixes.
+
+> Caution : The specialised switch nodes such as SceneSwitch and ImageSwitch have been replaced
+> with a single all-purpose Switch node. Compatibility for old files is provided by converting
+> nodes during loading, but files saved from Gaffer 0.51 will not be useable in prior versions.
+> This can be worked around with a config file in the previous version which does
+> `Gaffer.Switch = Gaffer.SwitchComputeNode`.
+
+Features
+--------
+
+- Arnold : Added support for Arnold 5.2. Please note that Arnold 5.2 is not compatible with
+  earlier Arnold versions, so if you wish to use Gaffer 0.51 with an earlier version, you
+  will need to compile Gaffer yourself.
+- 3Delight : Updated to support version 1.1.7. Please note that earlier versions are no
+  longer supported.
+
+Improvements
+------------
+
+- Viewer :
+  - Improved interactivity when using transform tools or scrubbing animation
+    (#2818).
+  - Added "Escape" hotkey to pause processing (#2838, #2843).
+- SceneInspector :
+  - Added inspection of light and shader parameters (#2797).
+  - Added annotation for indexed primitive variables (#2824).
+- ScriptNode : Added "frameRange:start" and "frameRange:end" context variables (#2811).
+- Documentation : Added "Anatomy of an Image" article (#2832).
+- Switch (#2123, #2812) : Replaced specialised nodes with a single all-purpose Switch node.
+
+Fixes
+-----
+
+- SceneInspector :
+  - The order in which diffs are displayed now matches the order
+    in which objects are selected in the Viewer (#2814).
+  - Fixed formatting of Color4f values (#2797).
+- GraphEditor : Fixed problems with `nodeDoubleClickSignal()` (#2821)
+    - The signal didn't respect slot return values, so a slot couldn't return True
+      to signify that it had handled the event, and block other slots.
+    - The default slot wasn't returning True.
+- Catalogue : Fixed delay when adding image with downsteam network (#2827).
+- AnimationEditor : Fixed numerical imprecision when snapping keys to whole frames
+  (#2820).
+- RenderController :
+  - Fixed bug where objects failed to render after being removed from
+    the lights set (#2825).
+  - Fixed GIL management bugs (#2830).
+- SceneView : Fixed bugs that could lead to a hang in the viewer
+  when expanding or collapsing the current selection (#2830).
+- SceneGadget : Fixed GIL management bugs (#2830).
+- Houdini : Fixed compilation with default build flags for Houdini 17 (#2829).
+- TransformTools : Fixed bug which prevented the editing of promoted transform
+  plugs (#2831).
+- ImageGadget : Fixed bug which prevented non-default dataWindow maximum coordinates
+  from being annotated in the Viewer (#2840).
+- TaskNode : Fixed bugs preventing implementation via internal network (#2846).
+- OpenGLRender (#2799) :
+  - Fixed crash when trying to use `gaffer execute` with OpenGLRender nodes.
+  - Fixed bug whereby the visualisation of the main render camera was visible.
+- Arnold : Fixed tests for API changes in Arnold 5.2 (#2841).
+
+API
+---
+
+- BackgroundTask : Added `waitFor()` method (#2818).
+- Added MAKE_GAFFER_COMPATIBILITY_VERSION macro (#2819).
+- ContextAlgo : Added GlobalScope utility class (#2812).
+- Switch :
+  - Added `inPlugs()` and `outPlug()` methods (#2812).
+- FilterPlug : Add `sceneAffectsMatch()` method (#2812).
+- TransformTool : Add `selectionChangedSignal()` (#2848).
+
+Breaking Changes
+----------------
+
+- Removed compatibility for loading files from Gaffer 0.15.0.0 and earlier.
+  Resave the file in a more recent version before loading in the current
+  version. Note that this can also expose bugs in custom scripts : if a script
+  incorrectly attempts to connect to an ArrayPlug instead of a child element,
+  this will now fail instead of being silently corrected (#2805, #2812).
+- Switch (#2812) :
+  - Removed SwitchDependencyNode, SwitchComputeNode, SceneSwitch, ShaderSwitch, FilterSwitch,
+    and ImageSwitch nodes. Use Switch node instead. Backwards compatibility for old files is
+    provided by converting to Switches during loading.
+- 3Delight : Removed compatibility for older versions. At the time of writing
+  3Delight 1.1.7 is the latest tested version (#2836).
+- SceneGadget : Removed private member variable. Source compatibility is retained
+  (#2818).
+- Filter : Made `sceneAffectsMatch()` protected. Use the new `FilterPlug::sceneAffectsMatch()`
+  method instead (#2812).
+- UnionFilter : Removed compatibility for nodes created prior to version 0.28.0.0 (#2812).
+- TransformTool : Added private member data (#2848).
+
+0.50.0.0
+========
+
+Improvements
+------------
+
+- TransformTools : Added support for multiple selection (#2665, #2803).
+
+Fixes
+-----
+
+- CameraTool/TransformTool (#2807, #2808) : Mitigated against crashes during Catalogue
+  image saving.
+
+API
+---
+
+- GafferSceneUI::ContextAlgo : Added `set/getLastSelectedPath()` functions, used for
+  specifying the last location to have been selected (#2803).
+
+Breaking Changes
+----------------
+
+- TransformTool (#2803) :
+  - Moved `orientedTransform()` method to `Selection` class.
+  - Changed `selection()` return type.
+
+0.49.1.0
+========
+
+Improvements
+------------
+
+- SceneReader : Added transform plug, allowing caches to be positioned without needing a
+  separate Transform node (#2792).
+
+Fixes
+-----
+
+- SubGraph : Fixed crash bug in `correspondingInput()`. This typically manifested itself
+  as a crash when trying to delete or cut a box (#2796).
+- FileMenu : Added confirmation dialogue for "Revert to Saved", and added proper error
+  reporting for loading errors (#2735, #2794).
+- SetUI/FilteredSceneProcessorUI : Fixed bugs dealing with ArrayPlug inputs. These were
+  most visible as errors when working with the CopyAttributes node (#2785).
+- File Browser : Fixed crash when pointed at files with strange permissions. (#2800).
+- GraphEditor : Fixed hangs when framing backdrops (#2801).
+
+Documentation
+-------------
+
+- Added "Anatomy of a Scene" article (#2787).
+
+API
+---
+
+- ParallelAlgo : Refactored `callOnUIThread()` internals (#2786).
+
+0.49.0.1
+========
+
+Fixes
+-----
+
+Python bindings : Fixed several bugs which could cause Gaffer to hang (#2789).
+
+0.49.0.0
+========
+
+Improvements
+------------
+
+- ArnoldAttributes : Added `shadowGroup` attribute for performing shadow linking
+  (#2754).
+- ScaleTool : Added handles for scaling in the XY, XZ and YZ planes (#2760, #2664).
+- RotateTool : Added support for free rotation by dragging on a virtual
+  sphere (#2760, #2664).
+- TranslateTool : Made XY, YX and YZ handles more visible (#2760, #2664).
+- Translate/Rotate/Scale tools :
+  - Added support for animation (#2721).
+  - Added control over the size of the handle via the `+` and `-` keys (#2671, #2769).
+- Catalogue (#2702) :
+  - Multiple images may now be selected.
+  - The selected images can now be deleted via the `Delete` and `Backspace`
+    keys.
+  - Images can now be reordered using drag and drop.
+- OSLObject/OSLImage : Added support for more vector type conversions. Among other
+  things, this allows Color4fData primitive variables to be read as `color` values
+  in OSLObject, by discarding the alpha channel (#2759).
+- GraphEditor : Added icons for Box and Reference nodes (#2762).
+- Improved error message when a dependency cycle is detected. The error now
+  includes the names of the plugs involved (#2745).
+- AnimationEditor :
+  - Keyframes are now pre-highlighted during drag-select (#2768).
+  - The current frame can be set by clicking/dragging on the time axis (#2724).
+  - When dragging keyframes in a single axis only, the viewport auto-scroll
+    is now constrained to that axis (#2724).
+- SceneReader/SceneWriter (Cortex 10.0.0-a29) :
+  - Added support for scalar attributes in Alembic files.
+  - Added support for quaternion primitive variables in Alembic files.
+- MeshTangents : Added support for non-triangular faces (Cortex 10.0.0-a30).
+- VDB : Added support for float and double metadata (Cortex 10.0.0-a31).
+
+Fixes
+-----
+
+- TypedObjectPlug : Fixed GIL management bug that could result in the
+  application hanging during operations such as choosing AOVs in the
+  image viewer (#2765).
+- ScriptNode : Fixed GIL management bug that could result in the
+  application hanging during operations such as cut & paste (#2780).
+- GraphEditor :
+  - Fixed connection visibility context menu items so that they
+    respect the read-only status of nodes (#2757).
+  - Omitted connection visibility context menu items from the menu
+    for auxiliary nodes, since such nodes do not have hideable connections
+    (#2752, #2757).
+  - Fixed bookmark drawing update bug (#2763).
+  - Fixed plug label visibility bug (#2761).
+- AnimationEditor (#2768) :
+  - Fixed bugs with framerates other than 24fps.
+  - Fixed selection management bug.
+  - Improved numerical precision of keyframe dragging.
+- Backdrop : Made resizing undoable (#2734).
+- FileMenu : Closing a backup confirmation dialogue now aborts loading
+  completely (#2749).
+- Isolate : Fixed filter matching bug in set computation (#2748).
+- Translate/Rotate/Scale tools : Fixed context management bug (#2760).
+- CollectScenes : Replaced bogus ArrayPlug input with ScenePlug (#2726).
+- Catalogue :
+  - Fixed bug that caused CatalogueSelect nodes to be parented
+    at the wrong level, if a nested Catalogue was promoted to the next level
+    (#2702).
+  - Fixed bug whereby image order changed if image deletion was undone (#2767).
+- Offset : Fixed hangs caused by empty data windows (#2770).
+- VDB : Fixed crashes caused by thread-safety bug. This manifested most
+  commonly when instancing VDB objects (Cortex 10.0.0-a30).
+- Seeds : Fixed cancellation bug (Cortex 10.0.0-a31).
+- SceneReader : Fixed crashes caused by thread-safety bug in AlembicScene
+  (Cortex 10.0.0-a32).
+
+API
+---
+
+- Dispatcher : Fixed crashes caused by passing `None` to `frameRange()` method
+  in Python (#2716).
+- Added AttributeVisualiser.h to installation (#2744).
+- ConfirmationDialogue : `waitForConfirmation()` now returns `None` if the user
+  closes the dialogue (#2749).
+- StandardStyle (#2760) :
+  - Added support for XY,XZ and YZ axes in `renderScaleHandle()`.
+  - Added support for XYZ rotation handle in `renderRotateHandle()`.
+- Handle : Added `rasterScaleFactor()` protected method (#2760).
+- MetadataAlgo : Added `bookmarkedAffectedByChange()` method (#2763).
+- GraphComponent (#2767) :
+  - Added python binding for `del graphComponent[childIndex]`.
+  - The original child order is now restored when undoing
+    calls to `removeChild()`.
+- DependencyNode : Fixed crashes caused by Python derived classes returning
+  `None` from `affects()` overrides (#2771).
+- ViewportGadget : Added support for enabling/disabling drag tracking separately
+  in each axis (#2724).
+
+Documentation
+-------------
+
+- Added guidelines for contributing (#2713).
+- Added code of conduct (#2713).
+- Reworked the "Managing Complexity" section (#2623).
+- Improved installation and configuration sections (#2624).
+- Improved "Getting Started" tutorial (#2629).
+
+Breaking Changes
+----------------
+
+- ScaleHandle : `scaling()` method now returns a `V3f` (#2760).
+- RotateHandle (#2760) :
+  - Changed signature of `rotation()` method.
+  - Added private member data.
+- RotateTool (#2760) :
+  - Added private member data.
+  - Changed signature of `rotate()` method.
+- Style : Added `highlightVector` argument to `renderRotateHandle()` method (#2760).
+- TransformTool : Added argument to `updateHandles()` method (#2671, #2769).
+- ViewportGadget (#2724) :
+  - Changed function signatures for `setDragTracking()` and `getDragTracking()` methods.
+  - Changed private member variables.
+
+0.48.1.0
+========
+
+Features
+--------
+
+- CollectTransforms : Added a node for collecting transforms from different
+  contexts and storing them as attributes (#2708).
+- CollectPrimitiveVariables Added a node for collecting primitive variables
+  from different contexts (#2708).
+- PrimitiveVariableExists : Added utility node for querying the existence
+  of a primitive variable (#2708).
+
+Improvements
+------------
+
+- ArnoldLight : Improved performance (#2718).
+- SceneInspector : Added tooltips with the unabbreviated name of the item
+  being inspected (#2722).
+
+Fixes
+-----
+
+- Expression : Fixed threading bug in UI error handling (#2652, #2723).
+- ColorProcessor/Shuffle : Fixed bugs caused by attempted computation of non-existent
+ upstream channels (#2701, #2731).
+- Light : Fixed bounds computation (#2725).
+- AnimationGadget : Fixes crash caused by dragging keys on adjacent frames (#2720).
+
+0.48.0.0
+========
+
+Features
+--------
+
+- Viewer : The 3D viewer now updates asynchronously, keeping the UI responsive while the scene
+  is computed in the background (#2649).
+- AnimationEditor : Added a new editor to allow the graphical editing of animation
+  curves. This can be found on the tab next to the GraphEditor in the standard layouts (#2632).
+- DeleteObject node (#2694).
+- CopyAttributes node (#2710).
+
+Improvements
+------------
+
+- TranslateTool : Added handles for movement in the XY,XZ,YZ and camera planes (#2709).
+- Layouts menu (#51, #2698) :
+  - Added "Default/..." menu items to allow the default startup layout to be chosen.
+  - Added new "Save As/..." menu items to allow previously saved layouts to be replaced.
+- SceneInspector (#2607) :
+  - Added filter to sets sections.
+  - Moved set computations to background process, so they don't block the UI.
+- Shader : Improved performance (#2644).
+- ArnoldLightUI : Added support for "userDefault" parameter metadata. This matches
+  the format already in use for ArnoldShaderUI (#2646).
+- Viewer :
+  - Added selection mask, to choose which types of objects can be selected (#2696).
+  - Added more Arnold diagnostic shading modes (#2645)
+    - Matte
+    - Opaque
+    - Receive shadows
+    - Self shadows
+- ArnoldAttributes :
+  - Added `volumeStepScale`, `shapeStepSize` and `shapeStepScale` attributes (#2634).
+  - Clarified intended usage of subdividePolygons attribute (#2680).
+- FormatPlug : Made "Custom" mode persistent, so it is remembered across save and reload (#2660).
+- InteractiveRender : Removed unnecessary deletion and recreation of objects when `childNames`
+  changes (#2690, #2649).
+
+Fixes
+-----
+
+- GraphEditor :
+  - Fixed arrowheads on axis-aligned auxiliary connections (#2647, #2648).
+  - Fixed potential auto-scroll bug when dragging a node (#2705).
+- LocalDispatcher/TractorDispatcher : Fixed problems using `imath` context variables (#2653, #2654).
+- OSLObject : Fixed crashes caused by indexed primitive variables (#2655).
+- Viewer : Fixed visibility of children of look-through camera (#2694).
+- ObjectSource : Fixed transform.* -> out.bound dirty propagation (#2649).
+
+API
+---
+
+- SceneGadget :
+  - Added `setPaused()/getPaused()` and `state()` methods (#2649).
+  - Replaced `baseState()` with `set/getOpenGLOptions() methods (#2649).
+  - Added `waitForCompletion()` method (#2649).
+  - Added `set/getBlockingPaths()` methods (#2649).
+  - Added `set/getSelectionMask()` methods (#2696).
+- RenderController : Added new utility class for controlling interactive renders (#2649).
+- AnimationGadget : Added new Gadget for editing animation curves (#2632).
+- Animation (#2632) :
+  - Keys are now reference counted, so ownership can be shared between CurvePlugs and the
+    AnimationEditor.
+  - Keys may be edited in place with `key->setTime()` etc, and the CurvePlug automatically updates.
+  - `CurvePlug::keys()` has been replaced with `CurvePlug::begin()` and `CurvePlug::end()`.
+    This hides the internal choice of container while still providing iteration.
+  - Added optional `threshold` argument to `closestKey()`.
+- IECoreScenePreview::Renderer (#2649) :
+  - Added `command()` virtual method.
+  - Added `name()` virtual method.
+- IECoreGLPreview::OpenGLRenderer (#2649) :
+  - Made it possible to call `render()` concurrently with edits.
+  - Added support for highlighting selected objects.
+  - Added "gl:queryBound" command.
+  - Added "gl:querySelection" command.
+  - Added support for custom object and attribute visualisers.
+  - Added options for controlling base attributes.
+- PresetsPlugValueWidget : Added support for an optional "Custom" menu item, which allows the
+  user to enter an arbitary value. This is controlled by "presetsPlugValueWidget:allowCustom"
+  plug metadata (#2660).
+- BusyWidget : Added `busy` constructor argument (#2607).
+- LightTweaks (#2660) :
+  - Moved TweakPlug to the GafferScene namespace, so it can be reused by other
+    nodes.
+  - Added "Remove" mode.
+- Layouts (#2698) :
+  - Added `persistent` argument to `add()` method, mirroring the `Bookmarks.add()` API.
+    This automatically takes care of saving persistent layouts into the startup location.
+  - Added `setDefault()/getDefault()` and `createDefault()` methods to allow the management
+    of a default layout.
+- Handle (#2709) :
+  - Added `set/getVisibleOnHover()` methods.
+  - Added `PlanarDrag` axis accessors.
+- TranslateHandle (#2709) :
+  - Added `axisMask()` method.
+- FilteredSceneProcessor : Added constructor to allow array `inPlug()`.
+- Style :
+  - Added methods for rendering animation curves (#2632).
+  - Added `width` and `userColor` arguments to `renderLine()` (#2632).
+  - Added `userColor` argument to `renderText()` (#2632).
+  - Added XY/XZ/YZ Axes enum values (#2709).
+- ViewportGadget : Added `set/getVariableAspectZoom()` method (#2632).
+
+Build
+-----
+
+- ViewportGadget : Fixed compilation on Windows (#2705).
+- OpenImageIOReader : Fixed compilation with XCode 9.4 (#2712).
+- Updated Cortex to version 10.0.0-a28
+- Updated FreeType version 2.9.1
+- Updated Python to version 2.7.15
+- Updated Alembic to version 1.7.8
+
+Breaking Changes
+----------------
+
+- GafferSceneUI : Moved visualiser base classes to IECoreGLPreview (#2649).
+- ArnoldAttributes : Changed volume step attributes (#2634).
+- GafferImage : Removed FormatPlug compatibility for files saved in Gaffer 0.16 or older.
+  To migrate, resave the file in Gaffer 0.47 (#2682).
+- GafferOSL::ShadingEngine : Removed `scope` parameter from `needsAttribute()` (#2655).
+- Layouts (#2698) :
+  - Removed `save()` method. Use the `persistent` argument to `add()` and `setDefault()` instead.
+  - Added `applicationRoot` argument to constructor. You should use `acquire()` instead anyway.
+- LayoutMenu : Removed `delete()` method (#2698).
+- GUI config : Renamed standard layout from "Default" to "Standard" (#2698).
+- TranslateHandle : translation()` method now returns a V3f rather than a float (#2709).
+- TransformTool : Made `orientedTransform()` method const (#2709).
+- Style : Changed method signatures, enum values, and added virtual functions (#2632).
+- Animation : Refactored API. See API section for more details (#2632).
+- IECoreScenePreview::Renderer : Added virtual methods (#2649).
+- InteractiveRender : Added and removed private member data (ABI break) (#2649).
+- SceneGadget (#2649) :
+  - Added/removed private members (ABI break).
+  - Remove `baseState()`.
+- SceneView : Reorganised/simplified drawingMode plugs (#2649).
+
 0.47.0.0
 ========
 

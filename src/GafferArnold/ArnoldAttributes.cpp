@@ -54,6 +54,7 @@ ArnoldAttributes::ArnoldAttributes( const std::string &name )
 
 	attributes->addOptionalMember( "ai:visibility:camera", new IECore::BoolData( true ), "cameraVisibility", Gaffer::Plug::Default, false );
 	attributes->addOptionalMember( "ai:visibility:shadow", new IECore::BoolData( true ), "shadowVisibility", Gaffer::Plug::Default, false );
+	attributes->addOptionalMember( "ai:visibility:shadow_group", new IECore::StringData( "" ), "shadowGroup", Gaffer::Plug::Default, false );
 	attributes->addOptionalMember( "ai:visibility:diffuse_reflect", new IECore::BoolData( true ), "diffuseReflectionVisibility", Gaffer::Plug::Default, false );
 	attributes->addOptionalMember( "ai:visibility:specular_reflect", new IECore::BoolData( true ), "specularReflectionVisibility", Gaffer::Plug::Default, false );
 	attributes->addOptionalMember( "ai:visibility:diffuse_transmit", new IECore::BoolData( true ), "diffuseTransmissionVisibility", Gaffer::Plug::Default, false );
@@ -62,6 +63,7 @@ ArnoldAttributes::ArnoldAttributes( const std::string &name )
 	attributes->addOptionalMember( "ai:visibility:subsurface", new IECore::BoolData( true ), "subsurfaceVisibility", Gaffer::Plug::Default, false );
 
 	// Transform parameters
+
 	attributes->addOptionalMember( "ai:transform_type", new StringPlug( "value", Plug::In, "rotate_about_center" ), "transformType", false );
 
 	// Shading parameters
@@ -74,13 +76,13 @@ ArnoldAttributes::ArnoldAttributes( const std::string &name )
 
 	// Subdivision parameters
 
-	attributes->addOptionalMember( "ai:polymesh:subdivide_polygons", new BoolPlug( "value" ), "subdividePolygons", false );
 	attributes->addOptionalMember( "ai:polymesh:subdiv_iterations", new IntPlug( "value", Plug::In, 1, 1 ), "subdivIterations", false );
 	attributes->addOptionalMember( "ai:polymesh:subdiv_adaptive_error", new FloatPlug( "value", Plug::In, 0.0f, 0.0f ), "subdivAdaptiveError", false );
 	attributes->addOptionalMember( "ai:polymesh:subdiv_adaptive_metric", new StringPlug( "value", Plug::In, "auto" ), "subdivAdaptiveMetric", false );
 	attributes->addOptionalMember( "ai:polymesh:subdiv_adaptive_space", new StringPlug( "value", Plug::In, "raster" ), "subdivAdaptiveSpace", false );
 	attributes->addOptionalMember( "ai:polymesh:subdiv_uv_smoothing", new StringPlug( "value", Plug::In, "pin_corners" ), "subdivUVSmoothing", false );
 	attributes->addOptionalMember( "ai:polymesh:subdiv_smooth_derivs", new BoolPlug( "value" ), "subdivSmoothDerivs", false );
+	attributes->addOptionalMember( "ai:polymesh:subdivide_polygons", new BoolPlug( "value" ), "subdividePolygons", false );
 
 	// Curves parameters
 
@@ -89,9 +91,13 @@ ArnoldAttributes::ArnoldAttributes( const std::string &name )
 
 	// Volume parameters
 
-	attributes->addOptionalMember( "ai:shape:step_size", new FloatPlug( "value", Plug::In, 0.0f, 0.0f ), "volumeStepSize", false );
-	attributes->addOptionalMember( "ai:shape:volume_padding", new FloatPlug( "value", Plug::In, 0.0f, 0.0f ), "volumePadding", false );
+	attributes->addOptionalMember( "ai:volume:step_size", new FloatPlug( "value", Plug::In, 0.0f, 0.0f ), "volumeStepSize", false );
+	attributes->addOptionalMember( "ai:volume:step_scale", new FloatPlug( "value", Plug::In, 1.0f, 0.0f ), "volumeStepScale", false );
 
+	attributes->addOptionalMember( "ai:shape:step_size", new FloatPlug( "value", Plug::In, 0.0f, 0.0f ), "shapeStepSize", false );
+	attributes->addOptionalMember( "ai:shape:step_scale", new FloatPlug( "value", Plug::In, 1.0f, 0.0f ), "shapeStepScale", false );
+
+	attributes->addOptionalMember( "ai:shape:volume_padding", new FloatPlug( "value", Plug::In, 0.0f, 0.0f ), "volumePadding", false );
 	attributes->addOptionalMember( "ai:volume:velocity_scale", new FloatPlug( "value", Plug::In, 1.0f, 0.0f ), "velocityScale", false );
 	attributes->addOptionalMember( "ai:volume:velocity_fps", new FloatPlug( "value", Plug::In, 24.0f, 0.0f ), "velocityFPS", false );
 	attributes->addOptionalMember( "ai:volume:velocity_outlier_threshold", new FloatPlug( "value", Plug::In, 0.001f, 0.0f ), "velocityOutlierThreshold", false );

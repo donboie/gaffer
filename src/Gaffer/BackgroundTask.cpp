@@ -251,6 +251,38 @@ void BackgroundTask::wait()
 	activeTasks().erase( this );
 }
 
+bool BackgroundTask::waitFor( float seconds )
+{
+	using namespace std::chrono;
+
+	// `wait_for( duration<float> )` seems to be unreliable,
+	// so we cast to milliseconds first.
+	milliseconds timeoutDuration = duration_cast<milliseconds>( duration<float>( seconds ) );
+
+	std::unique_lock<std::mutex> lock( m_taskData->mutex );
+	const bool completed = m_taskData->conditionVariable.wait_for(
+		lock,
+		timeoutDuration,
+		[this]{
+			switch( this->m_taskData->status )
+			{
+				case Completed :
+				case Cancelled :
+				case Errored :
+					return true;
+				default :
+					return false;
+			}
+		}
+	);
+
+	if( completed )
+	{
+		activeTasks().erase( this );
+	}
+	return completed;
+}
+
 void BackgroundTask::cancelAndWait()
 {
 	cancel();
@@ -290,6 +322,25 @@ void BackgroundTask::cancelAffectedTasks( const GraphComponent *actionSubject )
 	// And then perform all the waits. This way the wait on one
 	// task doesn't delay the start of cancellation for the next.
 	for( auto it = range.first; it != range.second; )
+	{
+		// Wait invalidates iterator, so must increment first.
+		auto nextIt = std::next( it );
+		it->task->wait();
+		it = nextIt;
+	}
+}
+
+void BackgroundTask::cancelAllTasks()
+{
+	const ActiveTasks &a = activeTasks();
+	// Call cancel for everything first.
+	for( const auto &t : a )
+	{
+		t.task->cancel();
+	}
+	// And then perform all the waits. This way the wait on one
+	// task doesn't delay the start of cancellation for the next.
+	for( auto it = a.begin(); it != a.end(); )
 	{
 		// Wait invalidates iterator, so must increment first.
 		auto nextIt = std::next( it );

@@ -35,6 +35,7 @@
 ##########################################################################
 
 import inspect
+import os
 import unittest
 
 import IECore
@@ -61,7 +62,9 @@ class CollectScenesTest( GafferSceneTest.SceneTestCase ) :
 		script["group"]["in"][0].setInput( script["sphere"]["out"] )
 		script["group"]["in"][1].setInput( script["cube"]["out"] )
 
-		script["switch"] = GafferScene.SceneSwitch()
+		script["switch"] = Gaffer.Switch()
+		script["switch"].setup( GafferScene.ScenePlug() )
+
 		script["switch"]["in"][0].setInput( script["sphere"]["out"] )
 		script["switch"]["in"][1].setInput( script["cube"]["out"] )
 		script["switch"]["in"][2].setInput( script["group"]["out"] )
@@ -186,12 +189,14 @@ class CollectScenesTest( GafferSceneTest.SceneTestCase ) :
 		script["sphere"]["sets"].setValue( "sphereSet" )
 
 		script["group"] = GafferScene.Group()
-		script["group"]["in"].setInput( script["sphere"]["out"] )
+		script["group"]["in"][0].setInput( script["sphere"]["out"] )
 
 		script["cube"] = GafferScene.Cube()
 		script["cube"]["sets"].setValue( "cubeSet" )
 
-		script["switch"] = GafferScene.SceneSwitch()
+		script["switch"] = Gaffer.Switch()
+		script["switch"].setup( GafferScene.ScenePlug() )
+
 		script["switch"]["in"][0].setInput( script["group"]["out"] )
 		script["switch"]["in"][1].setInput( script["cube"]["out"] )
 
@@ -253,6 +258,19 @@ class CollectScenesTest( GafferSceneTest.SceneTestCase ) :
 				"/3",
 			}
 		)
+
+	def testInPlug( self ) :
+
+		c = GafferScene.CollectScenes()
+		self.assertIsInstance( c["in"], GafferScene.ScenePlug )
+
+	def testLoadFromVersion0_48( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["fileName"].setValue( os.path.dirname( __file__ ) + "/scripts/collectScenes-0.48.0.0.gfr" )
+		s.load()
+
+		self.assertTrue( s["CollectScenes"]["in"].getInput(), s["Sphere"]["out"] )
 
 if __name__ == "__main__":
 	unittest.main()

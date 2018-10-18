@@ -68,16 +68,16 @@ TranslateTool::TranslateTool( SceneView *view, const std::string &name )
 	:	TransformTool( view, name )
 {
 
-	static Style::Axes axes[] = { Style::X, Style::Y, Style::Z };
-	static const char *handleNames[] = { "x", "y", "z" };
+	static Style::Axes axes[] = { Style::X, Style::Y, Style::Z, Style::XY, Style::XZ, Style::YZ, Style::XYZ };
+	static const char *handleNames[] = { "x", "y", "z", "xy", "xz", "yz", "xyz" };
 
-	for( int i = 0; i < 3; ++i )
+	for( int i = 0; i < 7; ++i )
 	{
 		HandlePtr handle = new TranslateHandle( axes[i] );
 		handle->setRasterScale( 75 );
 		handles()->setChild( handleNames[i], handle );
 		// connect with group 0, so we get called before the Handle's slot does.
-		handle->dragBeginSignal().connect( 0, boost::bind( &TranslateTool::dragBegin, this, i ) );
+		handle->dragBeginSignal().connect( 0, boost::bind( &TranslateTool::dragBegin, this ) );
 		handle->dragMoveSignal().connect( boost::bind( &TranslateTool::dragMove, this, ::_1, ::_2 ) );
 		handle->dragEndSignal().connect( boost::bind( &TranslateTool::dragEnd, this ) );
 	}
@@ -113,10 +113,11 @@ bool TranslateTool::affectsHandles( const Gaffer::Plug *input ) const
 		input == scenePlug()->transformPlug();
 }
 
-void TranslateTool::updateHandles()
+void TranslateTool::updateHandles( float rasterScale )
 {
+	const Orientation orientation = static_cast<Orientation>( orientationPlug()->getValue() );
 	handles()->setTransform(
-		orientedTransform( static_cast<Orientation>( orientationPlug()->getValue() ) )
+		selection().back().orientedTransform( orientation )
 	);
 
 	// Because we provide multiple orientations, the handles
@@ -125,85 +126,51 @@ void TranslateTool::updateHandles()
 	// of the target translation. For each handle, check to see
 	// if each of the plugs it effects are settable, and if not,
 	// disable the handle.
-	for( int i = 0; i < 3; ++i )
+	for( TranslateHandleIterator it( handles() ); !it.done(); ++it )
 	{
-		V3f handleDirection( 0 );
-		handleDirection[i] = 1.0f;
-		Translation translation = createTranslation( handleDirection );
-		bool editable = true;
-		for( int j = 0; j < 3; ++j )
+		bool enabled = true;
+		for( const auto &s : selection() )
 		{
-			if( translation.direction[j] != 0.0f )
+			if( !Translation( s, orientation ).canApply( (*it)->axisMask() ) )
 			{
-				const ValuePlug *plug = selection().transformPlug->translatePlug()->getChild( j );
-				if( !plug->settable() || MetadataAlgo::readOnly( plug ) )
-				{
-					editable = false;
-					break;
-				}
+				enabled = false;
+				break;
 			}
 		}
-		handles()->getChild<Gadget>( i )->setEnabled( editable );
+		(*it)->setEnabled( enabled );
+		(*it)->setRasterScale( rasterScale );
 	}
 }
 
 void TranslateTool::translate( const Imath::V3f &offset )
 {
-	if( !selection().transformPlug )
+	const Orientation orientation = static_cast<Orientation>( orientationPlug()->getValue() );
+	for( const auto &s : selection() )
 	{
-		return;
-	}
-
-	Translation t = createTranslation( offset );
-	applyTranslation( t, 1.0f );
-}
-
-TranslateTool::Translation TranslateTool::createTranslation( const Imath::V3f &directionInHandleSpace )
-{
-	Context::Scope scopedContext( view()->getContext() );
-	Translation result;
-
-	const Selection &selection = this->selection();
-	result.origin = selection.transformPlug->translatePlug()->getValue();
-
-	const M44f handlesTransform = orientedTransform( static_cast<Orientation>( orientationPlug()->getValue() ) );
-	V3f worldSpaceDirection;
-	handlesTransform.multDirMatrix( directionInHandleSpace, worldSpaceDirection );
-
-	selection.sceneToTransformSpace().multDirMatrix( worldSpaceDirection, result.direction );
-
-	return result;
-}
-
-void TranslateTool::applyTranslation( const Translation &translation, float offset )
-{
-	const Selection &selection = this->selection();
-	for( int i = 0; i < 3; ++i )
-	{
-		if( translation.direction[i] != 0.0f )
-		{
-			selection.transformPlug->translatePlug()->getChild( i )->setValue(
-				translation.origin[i] + translation.direction[i] * offset
-			);
-		}
+		Translation( s, orientation ).apply( offset );
 	}
 }
 
-IECore::RunTimeTypedPtr TranslateTool::dragBegin( int axis )
+IECore::RunTimeTypedPtr TranslateTool::dragBegin()
 {
-	V3f handleVector( 0 );
-	handleVector[axis] = 1;
-	m_drag = createTranslation( handleVector );
-
+	m_drag.clear();
+	const Orientation orientation = static_cast<Orientation>( orientationPlug()->getValue() );
+	for( const auto &s : selection() )
+	{
+		m_drag.push_back( Translation( s, orientation ) );
+	}
 	TransformTool::dragBegin();
 	return nullptr; // let the handle start the drag with the event system
 }
 
 bool TranslateTool::dragMove( const GafferUI::Gadget *gadget, const GafferUI::DragDropEvent &event )
 {
-	UndoScope undoScope( selection().transformPlug->ancestor<ScriptNode>(), UndoScope::Enabled, undoMergeGroup() );
-	const float offset = static_cast<const TranslateHandle *>( gadget )->translation( event );
-	applyTranslation( m_drag, offset );
+	UndoScope undoScope( selection()[0].transformPlug->ancestor<ScriptNode>(), UndoScope::Enabled, undoMergeGroup() );
+	const V3f translation = static_cast<const TranslateHandle *>( gadget )->translation( event );
+	for( const auto &t : m_drag )
+	{
+		t.apply( translation );
+	}
 	return true;
 }
 
@@ -211,4 +178,58 @@ bool TranslateTool::dragEnd()
 {
 	TransformTool::dragEnd();
 	return false;
+}
+
+//////////////////////////////////////////////////////////////////////////
+// TranslateTool::Translation
+//////////////////////////////////////////////////////////////////////////
+
+TranslateTool::Translation::Translation( const Selection &selection, Orientation orientation )
+{
+	Context::Scope scopedContext( selection.context.get() );
+
+	m_plug = selection.transformPlug->translatePlug();
+	m_origin = m_plug->getValue();
+
+	const M44f handlesTransform = selection.orientedTransform( orientation );
+	m_gadgetToTransform = handlesTransform * selection.sceneToTransformSpace();
+
+	m_time = selection.context->getTime();
+}
+
+bool TranslateTool::Translation::canApply( const Imath::V3f &offset ) const
+{
+	V3f offsetInTransformSpace;
+	m_gadgetToTransform.multDirMatrix( offset, offsetInTransformSpace );
+
+	for( int i = 0; i < 3; ++i )
+	{
+		if( offsetInTransformSpace[i] != 0.0f )
+		{
+			if( !canSetValueOrAddKey( m_plug->getChild( i ) ) )
+			{
+				return false;
+			}
+		}
+	}
+
+	return true;
+}
+
+void TranslateTool::Translation::apply( const Imath::V3f &offset ) const
+{
+	V3f offsetInTransformSpace;
+	m_gadgetToTransform.multDirMatrix( offset, offsetInTransformSpace );
+	for( int i = 0; i < 3; ++i )
+	{
+		FloatPlug *plug = m_plug->getChild( i );
+		if( canSetValueOrAddKey( plug ) )
+		{
+			setValueOrAddKey(
+				plug,
+				m_time,
+				m_origin[i] + offsetInTransformSpace[i]
+			);
+		}
+	}
 }

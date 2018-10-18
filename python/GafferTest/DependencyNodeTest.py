@@ -614,5 +614,66 @@ class DependencyNodeTest( GafferTest.TestCase ) :
 
 		s["n2"]["op1"].setInput( s["n1"]["product"] )
 
+	def testDependencyCycleReporting( self ) :
+
+		class CycleNode( Gaffer.DependencyNode ) :
+
+			def __init__( self, name="CycleNode" ) :
+
+				Gaffer.DependencyNode.__init__( self, name )
+
+				self["in"] = Gaffer.IntPlug()
+				self["out"] = Gaffer.IntPlug( direction = Gaffer.Plug.Direction.Out )
+
+			def affects( self, input ) :
+
+				outputs = Gaffer.DependencyNode.affects( self, input )
+
+				if input == self["in"] :
+					outputs.append( self["out"] )
+				elif input == self["out"] :
+					outputs.append( self["in"] )
+
+				return outputs
+
+		n = CycleNode()
+		with IECore.CapturingMessageHandler() as mh :
+			n["in"].setValue( 10 )
+
+		self.assertEqual( len( mh.messages ), 1 )
+		self.assertEqual( mh.messages[0].level, IECore.Msg.Level.Error )
+		self.assertEqual( mh.messages[0].context, "Plug dirty propagation" )
+		self.assertEqual( mh.messages[0].message, "Cycle detected between CycleNode.in and CycleNode.out" )
+
+	def testBadAffects( self ) :
+
+		class BadAffects( Gaffer.DependencyNode ) :
+
+			def __init__( self, name = "BadAffects" ) :
+
+				Gaffer.DependencyNode.__init__( self, name )
+
+				self["in"] = Gaffer.IntPlug()
+
+			def affects( self, input ) :
+
+				outputs = Gaffer.DependencyNode.affects( self, input )
+				if input == self["in"] :
+					outputs.append( None ) # Error!
+
+				return outputs
+
+		IECore.registerRunTimeTyped( BadAffects )
+
+		n = BadAffects()
+
+		with IECore.CapturingMessageHandler() as mh :
+			n["in"].setValue( 1 )
+
+		self.assertEqual( len( mh.messages ), 1 )
+		self.assertEqual( mh.messages[0].level, IECore.Msg.Level.Error )
+		self.assertEqual( mh.messages[0].context, "BadAffects::affects()" )
+		self.assertEqual( mh.messages[0].message, "TypeError: No registered converter was able to extract a C++ reference to type Gaffer::Plug from this Python object of type NoneType\n" )
+
 if __name__ == "__main__":
 	unittest.main()

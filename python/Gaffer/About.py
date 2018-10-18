@@ -116,7 +116,7 @@ class About :
 			{
 				"name" : "freetype",
 				"url" : "http://www.freetype.org/",
-				"license" : "$GAFFER_ROOT/doc/licenses/freetype",
+				"license" : "$GAFFER_ROOT/doc/licenses/FreeType",
 				"credit" : "Portions of this software are copyright (c) 2009 The FreeType Project (www.freetype.org). All rights reserved."
 			},
 
@@ -135,14 +135,14 @@ class About :
 			{
 				"name" : "libjpeg-turbo",
 				"url" : "https://libjpeg-turbo.org/",
-				"license" : "$GAFFER_ROOT/doc/licenses/libjpeg-turbo",
+				"license" : "$GAFFER_ROOT/doc/licenses/LibJPEG-Turbo",
 				"credit" : "This software is based in part on the work of the Independent JPEG Group.",
 			},
 
 			{
 				"name" : "libpng",
 				"url" : "http://www.libpng.org/",
-				"license" : "$GAFFER_ROOT/doc/licenses/libpng",
+				"license" : "$GAFFER_ROOT/doc/licenses/LibPNG",
 			},
 
 			{
@@ -154,7 +154,7 @@ class About :
 			{
 				"name" : "python",
 				"url" : "http://python.org/",
-				"license" : "$GAFFER_ROOT/doc/licenses/python",
+				"license" : "$GAFFER_ROOT/doc/licenses/Python",
 			},
 
 			{
@@ -165,13 +165,13 @@ class About :
 			{
 				"name" : "libtiff",
 				"url" : "http://www.libtiff.org/",
-				"license" : "$GAFFER_ROOT/doc/licenses/libtiff",
+				"license" : "$GAFFER_ROOT/doc/licenses/LibTIFF",
 			},
 
 			{
 				"name" : "tbb",
 				"url" : "http://threadingbuildingblocks.org/",
-				"license" : "$GAFFER_ROOT/doc/licenses/tbb",
+				"license" : "$GAFFER_ROOT/doc/licenses/TBB",
 			},
 
 			{
@@ -189,13 +189,13 @@ class About :
 			{
 				"name" : "HDF5",
 				"url" : "http://www.hdfgroup.org/",
-				"license" : "$GAFFER_ROOT/doc/licenses/hdf5",
+				"license" : "$GAFFER_ROOT/doc/licenses/HDF5",
 			},
 
 			{
 				"name" : "Alembic",
 				"url" : "http://www.alembic.io/",
-				"license" : "$GAFFER_ROOT/doc/licenses/alembic",
+				"license" : "$GAFFER_ROOT/doc/licenses/Alembic",
 			},
 
 			{
@@ -213,7 +213,7 @@ class About :
 			{
 				"name" : "USD",
 				"url" : "http://http://graphics.pixar.com/usd",
-				"license" : "$GAFFER_ROOT/doc/licenses/usd",
+				"license" : "$GAFFER_ROOT/doc/licenses/USD",
 			},
 
 			{

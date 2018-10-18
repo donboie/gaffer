@@ -69,7 +69,7 @@ class GAFFERSCENEUI_API TranslateTool : public TransformTool
 	protected :
 
 		bool affectsHandles( const Gaffer::Plug *input ) const override;
-		void updateHandles() override;
+		void updateHandles( float rasterScale ) override;
 
 	private :
 
@@ -80,20 +80,28 @@ class GAFFERSCENEUI_API TranslateTool : public TransformTool
 		// method.
 		struct Translation
 		{
-			Imath::V3f origin;
-			Imath::V3f direction;
-		};
 
-		Translation createTranslation( const Imath::V3f &directionInHandleSpace );
-		void applyTranslation( const Translation &translation, float offset );
+			Translation( const Selection &selection, Orientation orientation );
+
+			bool canApply( const Imath::V3f &offset ) const;
+			void apply( const Imath::V3f &offset ) const;
+
+			private :
+
+				Gaffer::V3fPlugPtr m_plug;
+				Imath::V3f m_origin;
+				Imath::M44f m_gadgetToTransform;
+				float m_time;
+
+		};
 
 		// Drag handling.
 
-		IECore::RunTimeTypedPtr dragBegin( int axis );
+		IECore::RunTimeTypedPtr dragBegin();
 		bool dragMove( const GafferUI::Gadget *gadget, const GafferUI::DragDropEvent &event );
 		bool dragEnd();
 
-		Translation m_drag;
+		std::vector<Translation> m_drag;
 
 		static ToolDescription<TranslateTool, SceneView> g_toolDescription;
 		static size_t g_firstPlugIndex;

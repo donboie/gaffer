@@ -51,7 +51,7 @@ import subprocess
 ###############################################################################################
 
 gafferMilestoneVersion = 0 # for announcing major milestones - may contain all of the below
-gafferMajorVersion = 47 # backwards-incompatible changes
+gafferMajorVersion = 52 # backwards-incompatible changes
 gafferMinorVersion = 0 # new backwards-compatible features
 gafferPatchVersion = 0 # bug fixes
 
@@ -679,12 +679,12 @@ libraries = {
 
 	"GafferScene" : {
 		"envAppends" : {
-			"LIBS" : [ "Gaffer", "Iex$OPENEXR_LIB_SUFFIX", "IECoreGL$CORTEX_LIB_SUFFIX", "IECoreImage$CORTEX_LIB_SUFFIX",  "IECoreScene$CORTEX_LIB_SUFFIX", "GafferImage", "GafferDispatch" ],
+			"LIBS" : [ "Gaffer", "Iex$OPENEXR_LIB_SUFFIX", "IECoreGL$CORTEX_LIB_SUFFIX", "IECoreImage$CORTEX_LIB_SUFFIX",  "IECoreScene$CORTEX_LIB_SUFFIX", "GafferImage", "GafferDispatch", "Half" ],
 		},
 		"pythonEnvAppends" : {
 			"LIBS" : [ "GafferBindings", "GafferScene", "GafferDispatch", "IECoreScene$CORTEX_LIB_SUFFIX" ],
 		},
-		"additionalFiles" : glob.glob( "glsl/*.frag" ) + glob.glob( "glsl/*.vert" ),
+		"additionalFiles" : glob.glob( "glsl/*.frag" ) + glob.glob( "glsl/*.vert" ) + ["include/GafferScene/Private/IECoreGLPreview/AttributeVisualiser.h"]
 	},
 
 	"GafferSceneTest" : {

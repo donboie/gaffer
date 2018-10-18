@@ -244,6 +244,7 @@ const AtString g_filtersArnoldString( "filters" );
 const AtString g_funcPtrArnoldString( "funcptr" );
 const AtString g_ginstanceArnoldString( "ginstance" );
 const AtString g_lightGroupArnoldString( "light_group" );
+const AtString g_shadowGroupArnoldString( "shadow_group" );
 const AtString g_linearArnoldString( "linear" );
 const AtString g_matrixArnoldString( "matrix" );
 const AtString g_matteArnoldString( "matte" );
@@ -276,6 +277,7 @@ const AtString g_sidednessArnoldString( "sidedness" );
 const AtString g_sphereArnoldString("sphere");
 const AtString g_sssSetNameArnoldString( "sss_setname" );
 const AtString g_stepSizeArnoldString( "step_size" );
+const AtString g_stepScaleArnoldString( "step_scale" );
 const AtString g_subdivIterationsArnoldString( "subdiv_iterations" );
 const AtString g_subdivAdaptiveErrorArnoldString( "subdiv_adaptive_error" );
 const AtString g_subdivAdaptiveMetricArnoldString( "subdiv_adaptive_metric" );
@@ -287,6 +289,7 @@ const AtString g_traceSetsArnoldString( "trace_sets" );
 const AtString g_transformTypeArnoldString( "transform_type" );
 const AtString g_thickArnoldString( "thick" );
 const AtString g_useLightGroupArnoldString( "use_light_group" );
+const AtString g_useShadowGroupArnoldString( "use_shadow_group" );
 const AtString g_userPtrArnoldString( "userptr" );
 const AtString g_visibilityArnoldString( "visibility" );
 const AtString g_volumeArnoldString("volume");
@@ -326,6 +329,8 @@ class ArnoldRendererBase : public IECoreScenePreview::Renderer
 	public :
 
 		~ArnoldRendererBase() override;
+
+		IECore::InternedString name() const override;
 
 		Renderer::AttributesInterfacePtr attributes( const IECore::CompoundObject *attributes ) override;
 
@@ -692,6 +697,7 @@ IECore::InternedString g_oslShaderAttributeName( "osl:shader" );
 
 IECore::InternedString g_cameraVisibilityAttributeName( "ai:visibility:camera" );
 IECore::InternedString g_shadowVisibilityAttributeName( "ai:visibility:shadow" );
+IECore::InternedString g_shadowGroup( "ai:visibility:shadow_group" );
 IECore::InternedString g_diffuseReflectVisibilityAttributeName( "ai:visibility:diffuse_reflect" );
 IECore::InternedString g_specularReflectVisibilityAttributeName( "ai:visibility:specular_reflect" );
 IECore::InternedString g_diffuseTransmitVisibilityAttributeName( "ai:visibility:diffuse_transmit" );
@@ -707,8 +713,11 @@ IECore::InternedString g_arnoldSelfShadowsAttributeName( "ai:self_shadows" );
 IECore::InternedString g_arnoldOpaqueAttributeName( "ai:opaque" );
 IECore::InternedString g_arnoldMatteAttributeName( "ai:matte" );
 
-IECore::InternedString g_stepSizeAttributeName( "ai:shape:step_size" );
-IECore::InternedString g_volumePaddingAttributeName( "ai:shape:volume_padding" );
+IECore::InternedString g_volumeStepSizeAttributeName( "ai:volume:step_size" );
+IECore::InternedString g_volumeStepScaleAttributeName( "ai:volume:step_scale" );
+IECore::InternedString g_shapeVolumeStepScaleAttributeName( "ai:shape:step_scale" );
+IECore::InternedString g_shapeVolumeStepSizeAttributeName( "ai:shape:step_size" );
+IECore::InternedString g_shapeVolumePaddingAttributeName( "ai:shape:volume_padding" );
 IECore::InternedString g_volumeGridsAttributeName( "ai:volume:grids" );
 IECore::InternedString g_velocityGridsAttributeName( "ai:volume:velocity_grids" );
 IECore::InternedString g_velocityScaleAttributeName( "ai:volume:velocity_scale" );
@@ -745,7 +754,7 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 	public :
 
 		ArnoldAttributes( const IECore::CompoundObject *attributes, ShaderCache *shaderCache )
-			:	m_visibility( AI_RAY_ALL ), m_sidedness( AI_RAY_ALL ), m_shadingFlags( Default ), m_stepSize( 0.0f ), m_volumePadding( 0.0f ), m_polyMesh( attributes ), m_displacement( attributes, shaderCache ), m_curves( attributes ), m_volume( attributes )
+			:	m_visibility( AI_RAY_ALL ), m_sidedness( AI_RAY_ALL ), m_shadingFlags( Default ), m_stepSize( 0.0f ), m_stepScale( 1.0f ), m_volumePadding( 0.0f ), m_polyMesh( attributes ), m_displacement( attributes, shaderCache ), m_curves( attributes ), m_volume( attributes )
 		{
 			updateVisibility( g_cameraVisibilityAttributeName, AI_RAY_CAMERA, attributes );
 			updateVisibility( g_shadowVisibilityAttributeName, AI_RAY_SHADOW, attributes );
@@ -780,10 +789,12 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 
 			m_traceSets = attribute<IECore::InternedStringVectorData>( g_setsAttributeName, attributes );
 			m_transformType = attribute<IECore::StringData>( g_transformTypeAttributeName, attributes );
-			m_stepSize = attributeValue<float>( g_stepSizeAttributeName, attributes, 0.0f );
-			m_volumePadding = attributeValue<float>( g_volumePaddingAttributeName, attributes, 0.0f );
+			m_stepSize = attributeValue<float>( g_shapeVolumeStepSizeAttributeName, attributes, 0.0f );
+			m_stepScale = attributeValue<float>( g_shapeVolumeStepScaleAttributeName, attributes, 1.0f );
+			m_volumePadding = attributeValue<float>( g_shapeVolumePaddingAttributeName, attributes, 0.0f );
 
 			m_linkedLights = attribute<IECore::StringVectorData>( g_linkedLights, attributes );
+			m_shadowGroup = attribute<IECore::StringVectorData>( g_shadowGroup, attributes );
 			m_sssSetName = attribute<IECore::StringData>( g_sssSetNameName, attributes );
 
 			for( IECore::CompoundObject::ObjectMap::const_iterator it = attributes->members().begin(), eIt = attributes->members().end(); it != eIt; ++it )
@@ -831,7 +842,9 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 				}
 			}
 
-			if( m_stepSize != 0.0f && AiNodeEntryLookUpParameter( AiNodeGetNodeEntry( node ), g_stepSizeArnoldString ) )
+			float actualStepSize = m_stepSize * m_stepScale;
+
+			if( actualStepSize != 0.0f && AiNodeEntryLookUpParameter( AiNodeGetNodeEntry( node ), g_stepSizeArnoldString ) )
 			{
 				// Only apply step_size if it hasn't already been set to a non-zero
 				// value by the geometry converter. This allows procedurals to carry
@@ -840,7 +853,7 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 				// calculate the correct step size and provide it via a parameter.
 				if( AiNodeGetFlt( node, g_stepSizeArnoldString ) == 0.0f )
 				{
-					AiNodeSetFlt( node, g_stepSizeArnoldString, m_stepSize );
+					AiNodeSetFlt( node, g_stepSizeArnoldString, actualStepSize );
 				}
 			}
 
@@ -1055,25 +1068,10 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 
 				if( m_linkedLights )
 				{
-					// NOTE : There is an awful lot of AtString conversion and AiNodeLookUpByName
-					// happening here if we have lots lights.  It seems like it would be great if there
-					// was some way of caching the evaluation of light expressions as a vector of node
-					// pointers, instead of a vector of strings - this might be tricky with how the
-					// baking of expressions currently happens in the EvaluateLightLinks node?
-					const std::vector<std::string> &lightNames = m_linkedLights->readable();
+					std::vector<AtNode*> lightNodes;
+					lightNamesToNodes( m_linkedLights->readable(), lightNodes );
 
-					std::vector<AtNode*> lightNodesVector;
-					for ( IECore::StringVectorData::ValueType::const_iterator it = lightNames.begin(); it != lightNames.end(); ++it )
-					{
-						std::string lightName = "light:" + *(it);
-						AtNode *lightNode = AiNodeLookUpByName( AtString( lightName.c_str() ) );
-						if( lightNode )
-						{
-							lightNodesVector.push_back( lightNode );
-						}
-					}
-
-					AtArray *linkedLightNodes = AiArrayConvert( lightNodesVector.size(), 1, AI_TYPE_NODE, lightNodesVector.data() );
+					AtArray *linkedLightNodes = AiArrayConvert( lightNodes.size(), 1, AI_TYPE_NODE, lightNodes.data() );
 					AiNodeSetArray( node, g_lightGroupArnoldString, linkedLightNodes );
 					AiNodeSetBool( node, g_useLightGroupArnoldString, true );
 				}
@@ -1081,6 +1079,21 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 				{
 					AiNodeResetParameter( node, g_lightGroupArnoldString );
 					AiNodeResetParameter( node, g_useLightGroupArnoldString );
+				}
+
+				if( m_shadowGroup )
+				{
+					std::vector<AtNode*> lightNodes;
+					lightNamesToNodes( m_shadowGroup->readable(), lightNodes );
+
+					AtArray *linkedLightNodes = AiArrayConvert( lightNodes.size(), 1, AI_TYPE_NODE, lightNodes.data() );
+					AiNodeSetArray( node, g_shadowGroupArnoldString, linkedLightNodes );
+					AiNodeSetBool( node, g_useShadowGroupArnoldString, true );
+				}
+				else
+				{
+					AiNodeResetParameter( node, g_shadowGroupArnoldString );
+					AiNodeResetParameter( node, g_useShadowGroupArnoldString );
 				}
 			}
 
@@ -1283,6 +1296,8 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 			velocityScale = optionalAttribute<float>( g_velocityScaleAttributeName, attributes );
 			velocityFPS = optionalAttribute<float>( g_velocityFPSAttributeName, attributes );
 			velocityOutlierThreshold = optionalAttribute<float>( g_velocityOutlierThresholdAttributeName, attributes );
+			stepSize = optionalAttribute<float> ( g_volumeStepSizeAttributeName, attributes );
+			stepScale = optionalAttribute<float>( g_volumeStepScaleAttributeName, attributes );
 		}
 
 		IECore::ConstStringVectorDataPtr volumeGrids;
@@ -1290,6 +1305,8 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 		boost::optional<float> velocityScale;
 		boost::optional<float> velocityFPS;
 		boost::optional<float> velocityOutlierThreshold;
+		boost::optional<float> stepSize;
+		boost::optional<float> stepScale;
 
 		void hash( IECore::MurmurHash &h ) const
 		{
@@ -1306,6 +1323,8 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 			h.append( velocityScale.get_value_or( 1.0f ) );
 			h.append( velocityFPS.get_value_or( 24.0f ) );
 			h.append( velocityOutlierThreshold.get_value_or( 0.001f ) );
+			h.append( stepSize.get_value_or( 0.0f ) );
+			h.append( stepScale.get_value_or( 1.0f ) );
 		}
 
 		void apply( AtNode *node ) const
@@ -1354,6 +1373,15 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 			if( velocityOutlierThreshold )
 			{
 				AiNodeSetFlt( node, g_velocityOutlierThresholdArnoldString, velocityOutlierThreshold.get() );
+			}
+
+			if ( stepSize )
+			{
+				AiNodeSetFlt( node, g_stepSizeArnoldString, stepSize.get() * stepScale.get_value_or( 1.0f ) );
+			}
+			else if ( stepScale )
+			{
+				AiNodeSetFlt( node, g_stepScaleArnoldString, stepScale.get() );
 			}
 		}
 	};
@@ -1433,6 +1461,7 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 					m_polyMesh.hash( meshInterpolationIsLinear, h );
 					m_displacement.hash( h );
 					h.append( m_stepSize );
+					h.append( m_stepScale );
 					h.append( m_volumePadding );
 					break;
 				case IECoreScene::CurvesPrimitiveTypeId :
@@ -1440,19 +1469,20 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 					break;
 				case IECoreScene::SpherePrimitiveTypeId :
 					h.append( m_stepSize );
+					h.append( m_stepScale );
 					h.append( m_volumePadding );
 					break;
 				case IECoreScene::ExternalProceduralTypeId :
 					if( proceduralIsVolumetric )
 					{
 						h.append( m_stepSize );
+						h.append( m_stepScale );
 						h.append( m_volumePadding );
 
 						m_volume.hash( h );
 					}
 					break;
 				case IECoreVDB::VDBObjectTypeId :
-					h.append( m_stepSize );
 					h.append( m_volumePadding );
 
 					m_volume.hash( h );
@@ -1460,6 +1490,25 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 				default :
 					// No geometry attributes for this type.
 					break;
+			}
+		}
+
+		void lightNamesToNodes( const std::vector<std::string> &lightNames, std::vector<AtNode*> &lightNodes ) const
+		{
+			// NOTE : There is an awful lot of AtString conversion and AiNodeLookUpByName
+			// happening here if we have lots lights.  It seems like it would be great if there
+			// was some way of caching the evaluation of light expressions as a vector of node
+			// pointers, instead of a vector of strings - this might be tricky with how the
+			// baking of expressions currently happens in the EvaluateLightLinks node?
+
+			for ( IECore::StringVectorData::ValueType::const_iterator it = lightNames.begin(); it != lightNames.end(); ++it )
+			{
+				std::string lightName = "light:" + *(it);
+				AtNode *lightNode = AiNodeLookUpByName( AtString( lightName.c_str() ) );
+				if( lightNode )
+				{
+					lightNodes.push_back( lightNode );
+				}
 			}
 		}
 
@@ -1472,12 +1521,14 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 		IECore::ConstInternedStringVectorDataPtr m_traceSets;
 		IECore::ConstStringDataPtr m_transformType;
 		float m_stepSize;
+		float m_stepScale;
 		float m_volumePadding;
 		PolyMesh m_polyMesh;
 		Displacement m_displacement;
 		Curves m_curves;
 		Volume m_volume;
 		IECore::ConstStringVectorDataPtr m_linkedLights;
+		IECore::ConstStringVectorDataPtr m_shadowGroup;
 
 		typedef boost::container::flat_map<IECore::InternedString, IECore::ConstDataPtr> UserAttributes;
 		UserAttributes m_user;
@@ -2678,8 +2729,7 @@ class ArnoldGlobals
 			{
 				if( !m_defaultCamera )
 				{
-					IECoreScene::CameraPtr defaultCortexCamera = new IECoreScene::Camera();
-					defaultCortexCamera->addStandardParameters();
+					IECoreScene::ConstCameraPtr defaultCortexCamera = new IECoreScene::Camera();
 					m_cameras["ieCoreArnold:defaultCamera"] = defaultCortexCamera;
 					m_defaultCamera = SharedAtNodePtr(
 						CameraAlgo::convert( defaultCortexCamera.get(), "ieCoreArnold:defaultCamera", nullptr ),
@@ -2691,46 +2741,34 @@ class ArnoldGlobals
 			}
 			AiNodeSetPtr( options, g_cameraArnoldString, arnoldCamera );
 
-			const IECore::V2iData *resolution = cortexCamera->parametersData()->member<IECore::V2iData>( "resolution" );
-			AiNodeSetInt( options, g_xresArnoldString, resolution->readable().x );
-			AiNodeSetInt( options, g_yresArnoldString, resolution->readable().y );
+			Imath::V2i resolution = cortexCamera->renderResolution();
+			Imath::Box2i renderRegion = cortexCamera->renderRegion();
 
-			const IECore::FloatData *pixelAspectRatio = cortexCamera->parametersData()->member<IECore::FloatData>( "pixelAspectRatio" );
-			AiNodeSetFlt( options, g_pixelAspectRatioArnoldString, pixelAspectRatio->readable() );
+			AiNodeSetInt( options, g_xresArnoldString, resolution.x );
+			AiNodeSetInt( options, g_yresArnoldString, resolution.y );
 
-			const IECore::Box2iData *renderRegion = cortexCamera->parametersData()->member<IECore::Box2iData>( "renderRegion" );
+			AiNodeSetFlt( options, g_pixelAspectRatioArnoldString, cortexCamera->getPixelAspectRatio() );
 
-			if( renderRegion )
+			if(
+				renderRegion.min.x >= renderRegion.max.x ||
+				renderRegion.min.y >= renderRegion.max.y
+			)
 			{
-				if( renderRegion->readable().isEmpty() )
-				{
-					// Arnold does not permit empty render regions.  The user intent of an empty render
-					// region is probably to render as little as possible ( it could happen if you
-					// built a tool to crop to an object which passed out of frame ).
-					// We just pick one pixel in the corner
-
-					AiNodeSetInt( options, g_regionMinXArnoldString, 0 );
-					AiNodeSetInt( options, g_regionMinYArnoldString, 0 );
-					AiNodeSetInt( options, g_regionMaxXArnoldString, 0 );
-					AiNodeSetInt( options, g_regionMaxYArnoldString, 0 );
-				}
-				else
-				{
-					AiNodeSetInt( options, g_regionMinXArnoldString, renderRegion->readable().min.x );
-					AiNodeSetInt( options, g_regionMinYArnoldString, renderRegion->readable().min.y );
-					AiNodeSetInt( options, g_regionMaxXArnoldString, renderRegion->readable().max.x );
-					AiNodeSetInt( options, g_regionMaxYArnoldString, renderRegion->readable().max.y );
-				}
-			}
-			else
-			{
-				AiNodeResetParameter( options, g_regionMinXArnoldString );
-				AiNodeResetParameter( options, g_regionMinYArnoldString );
-				AiNodeResetParameter( options, g_regionMaxXArnoldString );
-				AiNodeResetParameter( options, g_regionMaxYArnoldString );
+				// Arnold does not permit empty render regions.  The user intent of an empty render
+				// region is probably to render as little as possible ( it could happen if you
+				// built a tool to crop to an object which passed out of frame ).
+				// We just pick one pixel in the corner
+				renderRegion = Imath::Box2i( Imath::V2i( 0 ), Imath::V2i( 1 ) );
 			}
 
-			Imath::V2f shutter = cortexCamera->parametersData()->member<IECore::V2fData>( "shutter", true )->readable();
+			// Note that we have to flip Y and subtract 1 from the max value, because
+			// renderRegion is stored in Gaffer image format ( +Y up and an exclusive upper bound )
+			AiNodeSetInt( options, g_regionMinXArnoldString, renderRegion.min.x );
+			AiNodeSetInt( options, g_regionMinYArnoldString, resolution.y - renderRegion.max.y );
+			AiNodeSetInt( options, g_regionMaxXArnoldString, renderRegion.max.x - 1 );
+			AiNodeSetInt( options, g_regionMaxYArnoldString, resolution.y - renderRegion.min.y - 1 );
+
+			Imath::V2f shutter = cortexCamera->getShutter();
 			if( m_sampleMotion.get_value_or( true ) )
 			{
 				AiNodeSetFlt( arnoldCamera, g_shutterStartArnoldString, shutter[0] );
@@ -2801,6 +2839,11 @@ ArnoldRendererBase::~ArnoldRendererBase()
 {
 }
 
+IECore::InternedString ArnoldRendererBase::name() const
+{
+	return "Arnold";
+}
+
 ArnoldRendererBase::AttributesInterfacePtr ArnoldRendererBase::attributes( const IECore::CompoundObject *attributes )
 {
 	return new ArnoldAttributes( attributes, m_shaderCache.get() );
@@ -2808,9 +2851,6 @@ ArnoldRendererBase::AttributesInterfacePtr ArnoldRendererBase::attributes( const
 
 ArnoldRendererBase::ObjectInterfacePtr ArnoldRendererBase::camera( const std::string &name, const IECoreScene::Camera *camera, const AttributesInterface *attributes )
 {
-	IECoreScene::CameraPtr cameraCopy = camera->copy();
-	cameraCopy->addStandardParameters();
-
 	Instance instance = m_instanceCache->get( camera, attributes, name );
 
 	ObjectInterfacePtr result = new ArnoldObject( instance );
@@ -2880,9 +2920,7 @@ class ArnoldRenderer final : public ArnoldRendererBase
 
 		ObjectInterfacePtr camera( const std::string &name, const IECoreScene::Camera *camera, const AttributesInterface *attributes ) override
 		{
-			IECoreScene::CameraPtr cameraCopy = camera->copy();
-			cameraCopy->addStandardParameters();
-			m_globals->camera( name, cameraCopy.get() );
+			m_globals->camera( name, camera );
 			return ArnoldRendererBase::camera( name, camera, attributes );
 		}
 

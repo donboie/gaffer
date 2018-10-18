@@ -44,6 +44,8 @@
 #include "Gaffer/ScriptNode.h"
 #include "Gaffer/UndoScope.h"
 
+#include "OpenEXR/ImathMatrixAlgo.h"
+
 #include "boost/bind.hpp"
 
 using namespace std;
@@ -54,6 +56,38 @@ using namespace GafferUI;
 using namespace GafferScene;
 using namespace GafferSceneUI;
 
+//////////////////////////////////////////////////////////////////////////
+// Internal utilities
+//////////////////////////////////////////////////////////////////////////
+
+namespace
+{
+
+M44f signOnlyScaling( const M44f &m )
+{
+	V3f scale;
+	V3f shear;
+	V3f rotate;
+	V3f translate;
+
+	extractSHRT( m, scale, shear, rotate, translate );
+
+	M44f result;
+
+	result.translate( translate );
+	result.rotate( rotate );
+	result.shear( shear );
+	result.scale( V3f( sign( scale.x ), sign( scale.y ), sign( scale.z ) ) );
+
+	return result;
+}
+
+} // namespace
+
+//////////////////////////////////////////////////////////////////////////
+// ScaleTool
+//////////////////////////////////////////////////////////////////////////
+
 IE_CORE_DEFINERUNTIMETYPED( ScaleTool );
 
 ScaleTool::ToolDescription<ScaleTool, SceneView> ScaleTool::g_toolDescription;
@@ -61,10 +95,10 @@ ScaleTool::ToolDescription<ScaleTool, SceneView> ScaleTool::g_toolDescription;
 ScaleTool::ScaleTool( SceneView *view, const std::string &name )
 	:	TransformTool( view, name )
 {
-	static Style::Axes axes[] = { Style::X, Style::Y, Style::Z, Style::XYZ };
-	static const char *handleNames[] = { "x", "y", "z", "xyz" };
+	static Style::Axes axes[] = { Style::X, Style::Y, Style::Z, Style::XY, Style::XZ, Style::YZ, Style::XYZ };
+	static const char *handleNames[] = { "x", "y", "z", "xy", "xz", "yz", "xyz" };
 
-	for( int i = 0; i < 4; ++i )
+	for( int i = 0; i < 7; ++i )
 	{
 		ScaleHandlePtr handle = new ScaleHandle( axes[i] );
 		handle->setRasterScale( 75 );
@@ -90,79 +124,71 @@ bool ScaleTool::affectsHandles( const Gaffer::Plug *input ) const
 	return input == scenePlug()->transformPlug();
 }
 
-void ScaleTool::updateHandles()
+void ScaleTool::updateHandles( float rasterScale )
 {
-	const Selection &selection = this->selection();
+	const Selection &primarySelection = this->selection().back();
 
 	M44f pivotMatrix;
 	{
-		Context::Scope upstreamScope( selection.upstreamContext.get() );
-		const V3f pivot = selection.transformPlug->pivotPlug()->getValue();
+		Context::Scope upstreamScope( primarySelection.upstreamContext.get() );
+		const V3f pivot = primarySelection.transformPlug->pivotPlug()->getValue();
 		pivotMatrix.translate( pivot );
 	}
 
+	M44f handlesMatrix = pivotMatrix * primarySelection.transformPlug->matrix() * primarySelection.sceneToTransformSpace().inverse();
+	// We want to take the sign of the scaling into account so that
+	// our handles point in the right direction. But we don't want
+	// the magnitude because a non-uniform handle scale breaks the
+	// operation of the xy/xz/yz handles.
+	handlesMatrix = signOnlyScaling( handlesMatrix );
+
 	handles()->setTransform(
-		pivotMatrix * selection.transformPlug->matrix() * selection.sceneToTransformSpace().inverse()
+		handlesMatrix
 	);
 
-	bool allSettable = true;
-	for( int i = 0; i < 3; ++i )
+	for( ScaleHandleIterator it( handles() ); !it.done(); ++it )
 	{
-		ValuePlug *plug = selection.transformPlug->scalePlug()->getChild( i );
-		const bool settable = plug->settable() && !MetadataAlgo::readOnly( plug );
-		handles()->getChild<Gadget>( i )->setEnabled( settable );
-		allSettable &= settable;
+		bool enabled = true;
+		for( const auto &s : selection() )
+		{
+			if( !Scale( s ).canApply( (*it)->axisMask() ) )
+			{
+				enabled = false;
+				break;
+			}
+		}
+		(*it)->setEnabled( enabled );
+		(*it)->setRasterScale( rasterScale );
 	}
-
-	handles()->getChild<Gadget>( 3 )->setEnabled( allSettable );
 }
 
 void ScaleTool::scale( const Imath::V3f &scale )
 {
-	for( int i = 0; i < 3; ++i )
+	for( const auto &s : selection() )
 	{
-		Scale s = createScale( (Style::Axes)i );
-		applyScale( s, scale[i] );
-	}
-}
-
-ScaleTool::Scale ScaleTool::createScale( Style::Axes axes )
-{
-	Context::Scope scopedContext( view()->getContext() );
-	Scale result;
-	result.originalScale = selection().transformPlug->scalePlug()->getValue();
-	result.axes = axes;
-	return result;
-}
-
-void ScaleTool::applyScale( const Scale &scale, float s )
-{
-	if( scale.axes == Style::XYZ )
-	{
-		selection().transformPlug->scalePlug()->setValue(
-			scale.originalScale * V3f( s )
-		);
-	}
-	else
-	{
-		selection().transformPlug->scalePlug()->getChild( scale.axes )->setValue(
-			scale.originalScale[scale.axes] * s
-		);
+		Scale( s ).apply( scale );
 	}
 }
 
 IECore::RunTimeTypedPtr ScaleTool::dragBegin( GafferUI::Style::Axes axes )
 {
-	m_drag = createScale( axes );
+	m_drag.clear();
+	for( const auto &s : selection() )
+	{
+		m_drag.push_back( Scale( s ) );
+	}
 	TransformTool::dragBegin();
 	return nullptr; // Let the handle start the drag.
 }
 
 bool ScaleTool::dragMove( const GafferUI::Gadget *gadget, const GafferUI::DragDropEvent &event )
 {
-	UndoScope undoScope( selection().transformPlug->ancestor<ScriptNode>(), UndoScope::Enabled, undoMergeGroup() );
-	const float scale = static_cast<const ScaleHandle *>( gadget )->scaling( event );
-	applyScale( m_drag, scale );
+	UndoScope undoScope( selection().back().transformPlug->ancestor<ScriptNode>(), UndoScope::Enabled, undoMergeGroup() );
+	const V3f &scaling = static_cast<const ScaleHandle *>( gadget )->scaling( event );
+	for( const auto &s : m_drag )
+	{
+		s.apply( scaling );
+	}
 	return true;
 }
 
@@ -170,4 +196,41 @@ bool ScaleTool::dragEnd()
 {
 	TransformTool::dragEnd();
 	return false;
+}
+
+//////////////////////////////////////////////////////////////////////////
+// ScaleTool::Scale
+//////////////////////////////////////////////////////////////////////////
+
+ScaleTool::Scale::Scale( const Selection &selection )
+{
+	Context::Scope scopedContext( selection.context.get() );
+	m_plug = selection.transformPlug->scalePlug();
+	m_originalScale = m_plug->getValue();
+	m_time = selection.context->getTime();
+}
+
+bool ScaleTool::Scale::canApply( const Imath::V3i &axisMask ) const
+{
+	for( int i = 0; i < 3; ++i )
+	{
+		if( axisMask[i] && !canSetValueOrAddKey( m_plug->getChild( i ) ) )
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+void ScaleTool::Scale::apply( const Imath::V3f &scale ) const
+{
+	for( int i = 0; i < 3; ++i )
+	{
+		FloatPlug *plug = m_plug->getChild( i );
+		if( canSetValueOrAddKey( plug ) )
+		{
+			setValueOrAddKey( plug, m_time, m_originalScale[i] * scale[i] );
+		}
+	}
 }

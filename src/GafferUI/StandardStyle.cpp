@@ -49,6 +49,7 @@
 #include "IECoreGL/Shader.h"
 #include "IECoreGL/ShaderLoader.h"
 #include "IECoreGL/ShaderStateComponent.h"
+#include "IECoreGL/SpherePrimitive.h"
 #include "IECoreGL/TextureLoader.h"
 #include "IECoreGL/ToGLMeshConverter.h"
 #include "IECoreGL/TypedStateComponent.h"
@@ -57,7 +58,9 @@
 #include "IECoreScene/MeshPrimitive.h"
 
 #include "OpenEXR/ImathVecAlgo.h"
+#include "OpenEXR/ImathMatrixAlgo.h"
 
+#include "boost/container/flat_map.hpp"
 #include "boost/tokenizer.hpp"
 
 using namespace GafferUI;
@@ -86,6 +89,12 @@ Imath::Color4f colorForAxes( Style::Axes axes )
 			return Color4f( 0.2, 0.57, 0.2, 1.0f );
 		case Style::Z :
 			return Color4f( 0.2, 0.36, 0.74, 1.0f );
+		case Style::XY :
+			return ( colorForAxes( Style::X ) + colorForAxes( Style::Y ) ) * 0.5;
+		case Style::XZ :
+			return ( colorForAxes( Style::X ) + colorForAxes( Style::Z ) ) * 0.5;
+		case Style::YZ :
+			return ( colorForAxes( Style::Y ) + colorForAxes( Style::Z ) ) * 0.5;
 		default :
 			return Color4f( 0.8, 0.8, 0.8, 0.0f );
 	}
@@ -175,8 +184,8 @@ IECoreGL::MeshPrimitivePtr torus()
 	IECore::V3fVectorDataPtr pData = new IECore::V3fVectorData;
 	vector<V3f> &p = pData->writable();
 
-	const float radiusI = 1;
 	const float radiusJ = 0.03;
+	const float radiusI = 1 + radiusJ;
 
 	const int numDivisionsI = 30;
 	const int numDivisionsJ = 15;
@@ -274,122 +283,167 @@ IECoreGL::MeshPrimitivePtr cube()
 
 IECoreGL::GroupPtr translateHandle( Style::Axes axes )
 {
-	if( axes < Style::X || axes > Style::Z )
-	{
-		throw Exception( "Unsupported axes" );
-	}
-	const int axis = (int)axes;
-
-	static IECoreGL::GroupPtr handles[3];
-	if( handles[axis] )
-	{
-		return handles[axis];
-	}
-
-	IECoreGL::GroupPtr coneGroup = new IECoreGL::Group;
-	coneGroup->addChild( cone() );
-	coneGroup->setTransform( M44f().scale( V3f( 0.25 ) ) * M44f().translate( V3f( 0, 1, 0 ) ) );
-
-	IECoreGL::GroupPtr group = new IECoreGL::Group;;
-
-	// Line ensures minimum width when very small on screen,
-	// like the corner gnomon in the SceneView.
-	group->addChild( line( V3f( 0 ), V3f( 0, 1, 0 ) ) );
-	// Cylinder provides a chunkier handle for picking when
-	// bigger on screen, like the TranslateHandle.
-	group->addChild( cylinder() );
-	group->addChild( coneGroup );
-
-	group->getState()->add( new IECoreGL::Color( colorForAxes( axes ) ) );
-	group->getState()->add(
-		new IECoreGL::ShaderStateComponent( ShaderLoader::defaultShaderLoader(), TextureLoader::defaultTextureLoader(), "", "", IECoreGL::Shader::constantFragmentSource(), new CompoundObject )
-	);
-
-	if( axis == 0 )
-	{
-		group->setTransform( M44f().rotate( V3f( 0, 0, -M_PI / 2.0f ) ) );
-	}
-	else if( axis == 2 )
-	{
-		group->setTransform( M44f().rotate( V3f( M_PI / 2.0f, 0, 0 ) ) );
-	}
-
-	handles[axis] = group;
-	return group;
-}
-
-IECoreGL::GroupPtr rotateHandle( Style::Axes axes )
-{
-	if( axes < Style::X || axes > Style::Z )
-	{
-		throw Exception( "Unsupported axes" );
-	}
-	const int axis = (int)axes;
-
-	static IECoreGL::GroupPtr handles[3];
-	if( handles[axis] )
-	{
-		return handles[axis];
-	}
-
-	IECoreGL::GroupPtr group = new IECoreGL::Group;
-	group->addChild( torus() );
-
-	group->getState()->add( new IECoreGL::Color( colorForAxes( axes ) ) );
-	group->getState()->add(
-		new IECoreGL::ShaderStateComponent( ShaderLoader::defaultShaderLoader(), TextureLoader::defaultTextureLoader(), "", "", IECoreGL::Shader::constantFragmentSource(), new CompoundObject )
-	);
-
-	if( axis == 0 )
-	{
-		group->setTransform( M44f().rotate( V3f( 0, 0, -M_PI / 2.0f ) ) );
-	}
-	else if( axis == 2 )
-	{
-		group->setTransform( M44f().rotate( V3f( M_PI / 2.0f, 0, 0 ) ) );
-	}
-
-	handles[axis] = group;
-	return group;
-}
-
-IECoreGL::GroupPtr scaleHandle( Style::Axes axes )
-{
-	if( axes < Style::X || axes > Style::XYZ )
-	{
-		throw Exception( "Unsupported axes" );
-	}
-
-	static IECoreGL::GroupPtr handles[4];
+	static boost::container::flat_map<Style::Axes, IECoreGL::GroupPtr> handles;
 	if( handles[axes] )
 	{
 		return handles[axes];
 	}
 
-	IECoreGL::GroupPtr cubeGroup = new IECoreGL::Group;
-	cubeGroup->addChild( cube() );
-	cubeGroup->setTransform( M44f().scale( V3f( 0.1 ) ) * M44f().translate( V3f( 0, axes == Style::XYZ ? 0 : 1, 0 ) ) );
-
-	IECoreGL::GroupPtr group = new IECoreGL::Group;;
-
-	if( axes <= Style::Z )
-	{
-		group->addChild( cylinder() );
-	}
-	group->addChild( cubeGroup );
-
+	IECoreGL::GroupPtr group = new IECoreGL::Group;
 	group->getState()->add( new IECoreGL::Color( colorForAxes( axes ) ) );
 	group->getState()->add(
 		new IECoreGL::ShaderStateComponent( ShaderLoader::defaultShaderLoader(), TextureLoader::defaultTextureLoader(), "", "", IECoreGL::Shader::constantFragmentSource(), new CompoundObject )
 	);
 
-	if( axes == Style::X )
+	if( axes == Style::X || axes == Style::Y || axes == Style::Z )
 	{
-		group->setTransform( M44f().rotate( V3f( 0, 0, -M_PI / 2.0f ) ) );
+		IECoreGL::GroupPtr coneGroup = new IECoreGL::Group;
+		coneGroup->addChild( cone() );
+		coneGroup->setTransform( M44f().scale( V3f( 0.25 ) ) * M44f().translate( V3f( 0, 1, 0 ) ) );
+
+		// Line ensures minimum width when very small on screen,
+		// like the corner gnomon in the SceneView.
+		group->addChild( line( V3f( 0 ), V3f( 0, 1, 0 ) ) );
+		// Cylinder provides a chunkier handle for picking when
+		// bigger on screen, like the TranslateHandle.
+		group->addChild( cylinder() );
+		group->addChild( coneGroup );
+
+		if( axes == Style::X )
+		{
+			group->setTransform( M44f().rotate( V3f( 0, 0, -M_PI / 2.0f ) ) );
+		}
+		else if( axes == Style::Z )
+		{
+			group->setTransform( M44f().rotate( V3f( M_PI / 2.0f, 0, 0 ) ) );
+		}
 	}
-	else if( axes == Style::Z )
+	else if( axes == Style::XY || axes == Style::XZ || axes == Style::YZ )
 	{
-		group->setTransform( M44f().rotate( V3f( M_PI / 2.0f, 0, 0 ) ) );
+		IECoreGL::GroupPtr cubeGroup = new IECoreGL::Group;
+		cubeGroup->setTransform( M44f().scale( V3f( 0.1, 0.1, 0.01 ) ) * M44f().translate( V3f( 0.5, 0.5, 0 ) ) );
+		cubeGroup->addChild( cube() );
+		group->addChild( cubeGroup );
+
+		if( axes == Style::XZ )
+		{
+			group->setTransform( M44f().rotate( V3f( M_PI / 2.0f, 0, 0 ) ) );
+		}
+		else if( axes == Style::YZ )
+		{
+			group->setTransform( M44f().rotate( V3f( 0, -M_PI / 2.0f, 0 ) ) );
+		}
+	}
+	else if( axes == Style::XYZ )
+	{
+		IECoreGL::GroupPtr cubeGroup = new IECoreGL::Group;
+		cubeGroup->setTransform( M44f().scale( V3f( 0.1 ) ) );
+		cubeGroup->addChild( cube() );
+		group->addChild( cubeGroup );
+	}
+
+	handles[axes] = group;
+	return group;
+}
+
+IECoreGL::GroupPtr rotateHandle( Style::Axes axes )
+{
+	static boost::container::flat_map<Style::Axes, IECoreGL::GroupPtr> handles;
+	if( handles[axes] )
+	{
+		return handles[axes];
+	}
+
+	IECoreGL::GroupPtr group = new IECoreGL::Group;
+	if( axes == Style::X || axes == Style::Y || axes == Style::Z )
+	{
+		group->addChild( torus() );
+
+		group->getState()->add( new IECoreGL::Color( colorForAxes( axes ) ) );
+		group->getState()->add(
+			new IECoreGL::ShaderStateComponent( ShaderLoader::defaultShaderLoader(), TextureLoader::defaultTextureLoader(), "", "", IECoreGL::Shader::constantFragmentSource(), new CompoundObject )
+		);
+
+		if( axes == Style::X )
+		{
+			group->setTransform( M44f().rotate( V3f( 0, 0, -M_PI / 2.0f ) ) );
+		}
+		else if( axes == Style::Z )
+		{
+			group->setTransform( M44f().rotate( V3f( M_PI / 2.0f, 0, 0 ) ) );
+		}
+	}
+	else if( axes == Style::XYZ )
+	{
+		group->addChild( new IECoreGL::SpherePrimitive() );
+	}
+	else
+	{
+		throw Exception( "Unsupported axes" );
+	}
+
+	handles[axes] = group;
+	return group;
+}
+
+const IECoreGL::Group *rotateHandleXYZHighlight()
+{
+	static IECoreGL::GroupPtr group;
+	if( group )
+	{
+		return group.get();
+	}
+
+	group = new IECoreGL::Group();
+	group->addChild( new SpherePrimitive( 1.03f, 0.99 ) );
+	group->getState()->add(
+		new IECoreGL::ShaderStateComponent( ShaderLoader::defaultShaderLoader(), TextureLoader::defaultTextureLoader(), "", "", IECoreGL::Shader::constantFragmentSource(), new CompoundObject )
+	);
+
+	return group.get();
+}
+
+IECoreGL::GroupPtr scaleHandle( Style::Axes axes )
+{
+	static boost::container::flat_map<Style::Axes, IECoreGL::GroupPtr> handles;
+	if( handles[axes] )
+	{
+		return handles[axes];
+	}
+
+	IECoreGL::GroupPtr group;
+
+	if( axes == Style::XY || axes == Style::XZ || axes == Style::YZ )
+	{
+		group = translateHandle( axes );
+	}
+	else
+	{
+		IECoreGL::GroupPtr cubeGroup = new IECoreGL::Group;
+		cubeGroup->addChild( cube() );
+		cubeGroup->setTransform( M44f().scale( V3f( 0.1 ) ) * M44f().translate( V3f( 0, axes == Style::XYZ ? 0 : 1, 0 ) ) );
+
+		group = new IECoreGL::Group;
+
+		if( axes != Style::XYZ )
+		{
+			group->addChild( cylinder() );
+		}
+		group->addChild( cubeGroup );
+
+		group->getState()->add( new IECoreGL::Color( colorForAxes( axes ) ) );
+		group->getState()->add(
+			new IECoreGL::ShaderStateComponent( ShaderLoader::defaultShaderLoader(), TextureLoader::defaultTextureLoader(), "", "", IECoreGL::Shader::constantFragmentSource(), new CompoundObject )
+		);
+
+		if( axes == Style::X )
+		{
+			group->setTransform( M44f().rotate( V3f( 0, 0, -M_PI / 2.0f ) ) );
+		}
+		else if( axes == Style::Z )
+		{
+			group->setTransform( M44f().rotate( V3f( M_PI / 2.0f, 0, 0 ) ) );
+		}
 	}
 
 	handles[axes] = group;
@@ -467,6 +521,7 @@ StandardStyle::StandardStyle()
 	setColor( HighlightColor, Color3f( 0.466, 0.612, 0.741 ) );
 	setColor( ConnectionColor, Color3f( 0.125, 0.125, 0.125 ) );
 	setColor( AuxiliaryConnectionColor, Color3f( 0.3, 0.45, 0.3 ) );
+	setColor( AnimationCurveColor, Color3f( 1.0, 1.0, 1.0 ) );
 }
 
 StandardStyle::~StandardStyle()
@@ -514,7 +569,7 @@ Imath::Box3f StandardStyle::textBound( TextType textType, const std::string &tex
 	);
 }
 
-void StandardStyle::renderText( TextType textType, const std::string &text, State state ) const
+void StandardStyle::renderText( TextType textType, const std::string &text, State state, const Imath::Color3f *userColor ) const
 {
 	glEnable( GL_TEXTURE_2D );
 	glActiveTexture( GL_TEXTURE0 );
@@ -533,7 +588,7 @@ void StandardStyle::renderText( TextType textType, const std::string &text, Stat
 	/// automatically linearised before arriving in the shader.
 	glUniform1i( g_textureTypeParameter, 2 );
 
-	glColor( m_colors[ForegroundColor] );
+	glColor( colorForState( ForegroundColor, state, userColor ) );
 
 	glPushMatrix();
 
@@ -803,6 +858,39 @@ void StandardStyle::renderRectangle( const Imath::Box2f &box ) const
 	glEnd();
 }
 
+void StandardStyle::renderAnimationCurve( const Imath::V2f &start, const Imath::V2f &end, const Imath::V2f &startTangent, const Imath::V2f &endTangent, State state, const Imath::Color3f *userColor ) const
+{
+	glUniform1i( g_isCurveParameter, 1 );
+	glUniform1i( g_borderParameter, 0 );
+	glUniform1f( g_edgeAntiAliasingParameter, 1 );
+	glUniform1i( g_textureTypeParameter, 0 );
+	glUniform1f( g_lineWidthParameter, 3.0 );
+
+	glColor( colorForState( AnimationCurveColor, state, userColor ) );
+
+	const Imath::V3f start3 = Imath::V3f( start.x, start.y, 0 );
+	const Imath::V3f end3 = Imath::V3f( end.x, end.y, 0 );
+	const Imath::V3f startTangent3 = Imath::V3f( startTangent.x, startTangent.y, 0 );
+	const Imath::V3f endTangent3 = Imath::V3f( endTangent.x, endTangent.y, 0 );
+
+	const V3f dir = ( end3 - start3 ).normalized();
+
+	glUniform3fv( g_v0Parameter, 1, start3.getValue() );
+	glUniform3fv( g_v1Parameter, 1, end3.getValue() );
+	glUniform3fv( g_t0Parameter, 1, ( startTangent3 != V3f( 0 ) ? startTangent3 :  dir ).getValue() );
+	glUniform3fv( g_t1Parameter, 1, ( endTangent3 != V3f( 0 ) ? endTangent3 : -dir ).getValue() );
+
+	glUniform1f( g_endPointSizeParameter, g_endPointSize );
+
+	glCallList( connectionDisplayList() );
+}
+
+void StandardStyle::renderAnimationKey( const Imath::V2f &position, State state, float size, const Imath::Color3f *userColor ) const
+{
+	glColor( colorForState( AnimationCurveColor, state, userColor ) );
+	renderSolidRectangle( Box2f( position - V2f( size ), position + V2f( size ) ) );
+}
+
 void StandardStyle::renderBackdrop( const Imath::Box2f &box, State state, const Imath::Color3f *userColor ) const
 {
 	glColor( userColor ? *userColor : m_colors[RaisedColor] );
@@ -878,13 +966,29 @@ void StandardStyle::renderTranslateHandle( Axes axes, State state ) const
 	translateHandle( axes )->render( glState );
 }
 
-void StandardStyle::renderRotateHandle( Axes axes, State state ) const
+void StandardStyle::renderRotateHandle( Axes axes, State state, const Imath::V3f &highlightVector ) const
 {
 	IECoreGL::State::bindBaseState();
 	IECoreGL::State *glState = const_cast<IECoreGL::State *>( IECoreGL::State::defaultState() );
 	IECoreGL::State::ScopedBinding highlight( *m_highlightState, *glState, state == HighlightedState );
 	IECoreGL::State::ScopedBinding disabled( *disabledState(), *glState, state == DisabledState );
+
+	if( !IECoreGL::Selector::currentSelector() && axes == XYZ )
+	{
+		// XYZ sphere holds out other handles, but does not draw.
+		glColorMask( false, false, false, false );
+	}
 	rotateHandle( axes )->render( glState );
+	glColorMask( true, true, true, true );
+
+	if( state == HighlightedState && axes == XYZ )
+	{
+		glPushMatrix();
+		const M44f m = rotationMatrix( V3f( 0, 0, 1 ), highlightVector );
+		glMultMatrixf( m.getValue() );
+		rotateHandleXYZHighlight()->render( glState );
+		glPopMatrix();
+	}
 }
 
 void StandardStyle::renderScaleHandle( Axes axes, State state ) const
@@ -932,15 +1036,23 @@ void StandardStyle::renderImage( const Imath::Box2f &box, const IECoreGL::Textur
 	glPopAttrib();
 }
 
-void StandardStyle::renderLine( const IECore::LineSegment3f &line ) const
+
+void StandardStyle::renderLine( const IECore::LineSegment3f &line, float width, const Imath::Color3f *userColor ) const
 {
 	glUniform1i( g_isCurveParameter, 1 );
 	glUniform1i( g_borderParameter, 0 );
 	glUniform1i( g_edgeAntiAliasingParameter, 1 );
 	glUniform1i( g_textureTypeParameter, 0 );
-	glUniform1f( g_lineWidthParameter, 0.5 );
+	glUniform1f( g_lineWidthParameter, width );
 
-	glColor( getColor( BackgroundColor ) );
+	if( userColor )
+	{
+		glColor( *userColor );
+	}
+	else
+	{
+		glColor( getColor( BackgroundColor ) );
+	}
 
 	V3f d = line.normalizedDirection();
 

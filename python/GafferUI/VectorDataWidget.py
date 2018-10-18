@@ -57,7 +57,7 @@ class VectorDataWidget( GafferUI.Widget ) :
 	# of identical length.
 	#
 	# header may be False for no header, True for a default header, or a list of
-	# strings to specify a custom header per column.
+	# strings to specify a custom header per data.
 	#
 	# minimumVisibleRows specifies a number of rows after which a vertical scroll bar
 	# may become visible - before this all rows should be directly visible with no need
@@ -81,6 +81,8 @@ class VectorDataWidget( GafferUI.Widget ) :
 		columnToolTips=None,
 		sizeEditable=True,
 		columnEditability=None,
+		horizontalScrollMode = GafferUI.ScrollMode.Never,
+		verticalScrollMode = GafferUI.ScrollMode.Automatic,
 		**kw
 	) :
 
@@ -99,8 +101,8 @@ class VectorDataWidget( GafferUI.Widget ) :
 		QtCompat.setSectionResizeMode( self.__tableView.verticalHeader(), QtWidgets.QHeaderView.Fixed )
 		self.__tableView.verticalHeader().setObjectName( "vectorDataWidgetVerticalHeader" )
 
-		self.__tableView.setHorizontalScrollBarPolicy( QtCore.Qt.ScrollBarAlwaysOff )
-		self.__tableView.setVerticalScrollBarPolicy( QtCore.Qt.ScrollBarAsNeeded )
+		self.__tableView.setHorizontalScrollBarPolicy( GafferUI.ScrollMode._toQt( horizontalScrollMode ) )
+		self.__tableView.setVerticalScrollBarPolicy( GafferUI.ScrollMode._toQt( verticalScrollMode ) )
 
 		self.__tableView.setSelectionBehavior( QtWidgets.QAbstractItemView.SelectItems )
 		self.__tableView.setCornerButtonEnabled( False )
@@ -165,10 +167,8 @@ class VectorDataWidget( GafferUI.Widget ) :
 		self.__dataChangedSignal = GafferUI.WidgetSignal()
 		self.__editSignal = Gaffer.Signal3()
 
-		if isinstance( header, list ) :
-			self.__headerOverride = header
-		else :
-			self.__headerOverride = None
+		self.__headerOverride  = None
+		self.setHeader( header )
 
 		self.__columnToolTips = columnToolTips
 		self.__columnEditability = columnEditability
@@ -232,10 +232,15 @@ class VectorDataWidget( GafferUI.Widget ) :
 				self.__tableView.horizontalHeader(),
 				QtWidgets.QHeaderView.ResizeToContents if haveResizeableContents else QtWidgets.QHeaderView.Fixed
 			)
+
 			self.__tableView.horizontalHeader().setStretchLastSection( canStretch )
+			horizontalSizePolicy = QtWidgets.QSizePolicy.Expanding
+			if self.__tableView.horizontalScrollMode() == QtCore.Qt.ScrollBarAlwaysOff and not canStretch :
+				horizontalSizePolicy = QtWidgets.QSizePolicy.Fixed
+
 			self.__tableView.setSizePolicy(
 				QtWidgets.QSizePolicy(
-					QtWidgets.QSizePolicy.Expanding if canStretch else QtWidgets.QSizePolicy.Fixed,
+					horizontalSizePolicy,
 					QtWidgets.QSizePolicy.Maximum
 				)
 			)
@@ -253,8 +258,28 @@ class VectorDataWidget( GafferUI.Widget ) :
 	## Returns the data being displayed. This is always returned as a list of
 	# VectorData instances, even if only one instance was passed to setData().
 	def getData( self ) :
+		if not self.__model:
+			return []
 
 		return self.__model.vectorData()
+
+	def setColumnToolTips( self, columnToolTips ) :
+
+		self.__columnToolTips = columnToolTips
+
+	def getColumnToolTips( self ):
+
+		return self.__columnToolTips
+
+	def setHeader( self, header ):
+		if isinstance( header, list ) :
+			self.__headerOverride = header
+		else :
+			self.__headerOverride = None
+
+	def getHeaderPrefix( self ):
+
+		return self.__headerPrefix
 
 	def setEditable( self, editable ) :
 
@@ -362,30 +387,13 @@ class VectorDataWidget( GafferUI.Widget ) :
 	# componentIndex will be -1.
 	def columnToDataIndex( self, columnIndex ) :
 
-		c = 0
-		for dataIndex, accessor in enumerate( self.__model.vectorDataAccessors() ) :
-			nc = accessor.numColumns()
-			if c + nc > columnIndex :
-				if nc == 1 :
-					return ( dataIndex, -1 )
-				else :
-					return ( dataIndex, columnIndex - c )
-			c += nc
-
-		raise IndexError( columnIndex )
+		return self.__model.columnToDataIndex( columnIndex )
 
 	## Performs the reverse of columnToDataIndex.
 	def dataToColumnIndex( self, dataIndex, componentIndex ) :
 
-		accessors = self.__model.vectorDataAccessors()
-		if dataIndex < 0 or dataIndex >= len( accessors ) :
-			raise IndexError( dataIndex )
+		return self.__model.dataToColumnIndex( dataIndex, componentIndex )
 
-		columnIndex = 0
-		for d in range( 0, dataIndex ) :
-			columnIndex += accessors[d].numColumns()
-
-		return columnIndex + max( 0, componentIndex )
 
 	## Returns a signal which is emitted whenever the data is edited.
 	# The signal is /not/ emitted when setData() is called.
@@ -811,16 +819,30 @@ class _Model( QtCore.QAbstractTableModel ) :
 		self.__data = data
 		self.__editable = editable
 		self.__header = header
-		self.__columnToolTips = columnToolTips
+		self.__columnToolTips = None
 		self.__columnEditability = columnEditability
+
 
 		self.__columns = []
 		self.__accessors = []
-		for d in self.__data :
-			accessor = _DataAccessor.create( d )
+		index = 0
+		if not header:
+			headerPrefixes = [None] * len( self.__data )
+		else:
+			headerPrefixes = header
+
+		if columnToolTips:
+			self.__columnToolTips = []
+
+		for d, header in zip(self.__data, headerPrefixes) :
+			accessor = _DataAccessor.create( d, name = header )
 			assert( accessor is not None )
 			for i in range( 0, accessor.numColumns() ) :
 				self.__columns.append( IECore.Struct( accessor=accessor, relativeColumnIndex=i ) )
+				if columnToolTips :
+					self.__columnToolTips.append( columnToolTips[index] )
+
+			index += 1
 			self.__accessors.append( accessor )
 
 		if self.__columnToolTips is not None :
@@ -833,6 +855,32 @@ class _Model( QtCore.QAbstractTableModel ) :
 	def vectorData( self ) :
 
 		return self.__data
+
+	def columnToDataIndex( self, columnIndex ) :
+
+		c = 0
+		for dataIndex, accessor in enumerate( self.vectorDataAccessors() ) :
+			nc = accessor.numColumns()
+			if c + nc > columnIndex :
+				if nc == 1 :
+					return ( dataIndex, -1 )
+				else :
+					return ( dataIndex, columnIndex - c )
+			c += nc
+
+		raise IndexError( columnIndex )
+
+	def dataToColumnIndex( self, dataIndex, componentIndex ) :
+
+		accessors = self.vectorDataAccessors()
+		if dataIndex < 0 or dataIndex >= len( accessors ) :
+			raise IndexError( dataIndex )
+
+		columnIndex = 0
+		for d in range( 0, dataIndex ) :
+			columnIndex += accessors[d].numColumns()
+
+		return columnIndex + max( 0, componentIndex )
 
 	def vectorDataAccessors( self ) :
 
@@ -876,11 +924,8 @@ class _Model( QtCore.QAbstractTableModel ) :
 
 		if role == QtCore.Qt.DisplayRole :
 			if orientation == QtCore.Qt.Horizontal :
-				if self.__header is not None :
-					return GafferUI._Variant.toVariant( self.__header[section] )
-				else :
-					column = self.__columns[section]
-					return GafferUI._Variant.toVariant( column.accessor.headerLabel( column.relativeColumnIndex ) )
+				column = self.__columns[section]
+				return GafferUI._Variant.toVariant( column.accessor.headerLabel( column.relativeColumnIndex ) )
 			else :
 				return GafferUI._Variant.toVariant( section )
 		elif role == QtCore.Qt.ToolTipRole :
@@ -905,14 +950,19 @@ class _Model( QtCore.QAbstractTableModel ) :
 
 	def data( self, index, role ) :
 
+		column = self.__columns[index.column()]
+		if role == QtCore.Qt.BackgroundColorRole :
+
+			if self.columnToDataIndex( index.column() )[0] % 2 == 0:
+				return  GafferUI._Variant.toVariant( GafferUI._StyleSheet.styleColor("backgroundMid")  )
+			else:
+				return  GafferUI._Variant.toVariant( GafferUI._StyleSheet.styleColor("alternateColor") )
+
 		if (
 			role == QtCore.Qt.DisplayRole or
 			role == QtCore.Qt.EditRole
 		) :
-			column = self.__columns[index.column()]
 			return column.accessor.getElement( index.row(), column.relativeColumnIndex )
-		elif role == QtCore.Qt.ToolTipRole and self.__columnToolTips is not None :
-			return GafferUI._Variant.toVariant( self.__columnToolTips[index.column()] )
 
 		return GafferUI._Variant.toVariant( None )
 
@@ -933,9 +983,10 @@ class _Model( QtCore.QAbstractTableModel ) :
 # Qt (QVariant) representation.
 class _DataAccessor( object ) :
 
-	def __init__( self, data ) :
+	def __init__( self, data, heading = ''  ) :
 
 		self.__data = data
+		self.heading = heading
 
 	def data( self ) :
 
@@ -947,7 +998,10 @@ class _DataAccessor( object ) :
 
 	def headerLabel( self, columnIndex ) :
 
-		return [ "X", "Y", "Z" ][columnIndex]
+		if self.heading:
+			return self.heading
+
+		return "value"
 
 	def defaultElement( self ) :
 
@@ -966,13 +1020,13 @@ class _DataAccessor( object ) :
 	#################################
 
 	@classmethod
-	def create( cls, data ) :
+	def create( cls, data, name = "" ) :
 
 		typeIds = [ data.typeId() ] + IECore.RunTimeTyped.baseTypeIds( data.typeId() )
 		for typeId in typeIds :
 			creator = cls.__typesToCreators.get( typeId, None )
 			if creator is not None :
-				return creator( data )
+				return creator( data, heading = name )
 
 		return None
 
@@ -987,6 +1041,10 @@ _DataAccessor.registerType( IECore.BoolVectorData.staticTypeId(), _DataAccessor 
 _DataAccessor.registerType( IECore.HalfVectorData.staticTypeId(), _DataAccessor )
 _DataAccessor.registerType( IECore.FloatVectorData.staticTypeId(), _DataAccessor )
 _DataAccessor.registerType( IECore.DoubleVectorData.staticTypeId(), _DataAccessor )
+_DataAccessor.registerType( IECore.CharVectorData.staticTypeId(), _DataAccessor )
+_DataAccessor.registerType( IECore.UCharVectorData.staticTypeId(), _DataAccessor )
+_DataAccessor.registerType( IECore.ShortVectorData.staticTypeId(), _DataAccessor )
+_DataAccessor.registerType( IECore.UShortVectorData.staticTypeId(), _DataAccessor )
 _DataAccessor.registerType( IECore.IntVectorData.staticTypeId(), _DataAccessor )
 _DataAccessor.registerType( IECore.UIntVectorData.staticTypeId(), _DataAccessor )
 _DataAccessor.registerType( IECore.Int64VectorData.staticTypeId(), _DataAccessor )
@@ -994,21 +1052,34 @@ _DataAccessor.registerType( IECore.UInt64VectorData.staticTypeId(), _DataAccesso
 
 class _CompoundDataAccessor( _DataAccessor ) :
 
-	def __init__( self, data ) :
+	def __init__( self, data, heading = "" ) :
 
-		_DataAccessor.__init__( self, data )
+		_DataAccessor.__init__( self, data, heading = heading )
 
 	def numColumns( self ) :
 
 		v = IECore.DataTraits.valueTypeFromSequenceType( type( self.data() ) )
 		return v.dimensions()
 
-	def headerLabel( self, columnIndex ) :
+	def headings( self ):
 
 		if isinstance( self.data(), ( IECore.Color3fVectorData, IECore.Color4fVectorData ) ) :
-			return [ "R", "G", "B", "A" ][columnIndex]
+			_headings = ["R", "G", "B", "A"]
 		else :
-			return [ "X", "Y", "Z", "W" ][columnIndex]
+			_headings = ["X", "Y", "Z", "W"]
+
+		if self.heading :
+			return [ self.heading + "." + i for i in _headings]
+
+		return _headings
+
+	def headerLabel( self, columnIndex ) :
+
+		headings = self.headings()
+		if len( headings ) == 1:
+			return "value"
+		else:
+			return headings[columnIndex]
 
 	def setElement( self, rowIndex, columnIndex, value ) :
 
@@ -1020,15 +1091,135 @@ class _CompoundDataAccessor( _DataAccessor ) :
 
 		return GafferUI._Variant.toVariant( self.data()[rowIndex][columnIndex] )
 
+class _QuatDataAccessor( _CompoundDataAccessor ) :
+
+	def __init__( self, data, heading = "" ) :
+
+		_CompoundDataAccessor.__init__( self, data, heading = heading )
+
+	def numColumns( self ) :
+
+		return 4
+
+	def getElement( self, rowIndex, columnIndex ) :
+
+		v = self.data()[rowIndex]
+		if columnIndex == 0:
+			return GafferUI._Variant.toVariant( v.v()[0] )
+		if columnIndex == 1:
+			return GafferUI._Variant.toVariant( v.v()[1] )
+		if columnIndex == 2:
+			return GafferUI._Variant.toVariant( v.v()[2] )
+		if columnIndex == 3:
+			return GafferUI._Variant.toVariant( v.r() )
+
 _DataAccessor.registerType( IECore.Color3fVectorData.staticTypeId(), _CompoundDataAccessor )
 _DataAccessor.registerType( IECore.Color4fVectorData.staticTypeId(), _CompoundDataAccessor )
+
+_DataAccessor.registerType( IECore.V2iVectorData.staticTypeId(), _CompoundDataAccessor )
+_DataAccessor.registerType( IECore.V2fVectorData.staticTypeId(), _CompoundDataAccessor )
+_DataAccessor.registerType( IECore.V2dVectorData.staticTypeId(), _CompoundDataAccessor )
+
+_DataAccessor.registerType( IECore.V3iVectorData.staticTypeId(), _CompoundDataAccessor )
 _DataAccessor.registerType( IECore.V3fVectorData.staticTypeId(), _CompoundDataAccessor )
+_DataAccessor.registerType( IECore.V3dVectorData.staticTypeId(), _CompoundDataAccessor )
+
+_DataAccessor.registerType( IECore.QuatfVectorData.staticTypeId(), _QuatDataAccessor )
+_DataAccessor.registerType( IECore.QuatdVectorData.staticTypeId(), _QuatDataAccessor )
+
+
+class _BoxDataAccessor ( _CompoundDataAccessor ):
+	def __init__( self, data, heading = "" ) :
+
+		_DataAccessor.__init__( self, data, heading = heading )
+
+	def numColumns( self ) :
+
+		v = IECore.DataTraits.valueTypeFromSequenceType( type( self.data() ) )
+		return v().min().dimensions() * 2
+
+	def headerLabel( self, columnIndex ) :
+
+		if self.numColumns() == 4:
+			return [ self.heading + ".minX", self.heading + ".minY", self.heading + ".maxX", self.heading + ".maxY"][columnIndex]
+		else:
+			return [ self.heading + ".minX", self.heading + ".minY", self.heading + ".minZ", self.heading + ".maxX", self.heading + ".maxY", self.heading + ".maxZ"][columnIndex]
+
+	def setElement( self, rowIndex, columnIndex, value ) :
+
+		element = self.data()[rowIndex]
+		element[columnIndex] = GafferUI._Variant.fromVariant( value )
+		self.data()[rowIndex] = element
+
+	def getElement( self, rowIndex, columnIndex ) :
+
+		dimension = self.numColumns() / 2
+
+		index = columnIndex % dimension
+		minMax = (columnIndex - index) / dimension
+		item = self.data()[rowIndex]
+		if minMax == 0:
+			return GafferUI._Variant.toVariant( item.min()[index] )
+		else:
+			return GafferUI._Variant.toVariant( item.max()[index] )
+
+_DataAccessor.registerType( IECore.Box2iVectorData.staticTypeId(), _BoxDataAccessor )
+_DataAccessor.registerType( IECore.Box2fVectorData.staticTypeId(), _BoxDataAccessor )
+_DataAccessor.registerType( IECore.Box2dVectorData.staticTypeId(), _BoxDataAccessor )
+
+_DataAccessor.registerType( IECore.Box3iVectorData.staticTypeId(), _BoxDataAccessor )
+_DataAccessor.registerType( IECore.Box3fVectorData.staticTypeId(), _BoxDataAccessor )
+_DataAccessor.registerType( IECore.Box3dVectorData.staticTypeId(), _BoxDataAccessor )
+
+
+class _MatrixDataAccessor ( _DataAccessor ) :
+	def __init__( self, data, heading = "" ) :
+
+		_DataAccessor.__init__( self, data, heading = heading )
+
+	def numColumns( self ) :
+
+		scalarType = IECore.DataTraits.valueTypeFromSequenceType( type ( self.data() ) )()
+		if isinstance(scalarType, imath.M33f) or isinstance(scalarType, imath.M33d) :
+			return 9
+		elif isinstance(scalarType, imath.M44f) or isinstance(scalarType, imath.M44d) :
+			return 16
+
+
+	def headerLabel( self, columnIndex ) :
+
+		return "{0}[{1}]".format(self.heading, columnIndex)
+
+	def setElement( self, rowIndex, columnIndex, value ) :
+
+		element = self.data()[rowIndex]
+		element[columnIndex] = GafferUI._Variant.fromVariant( value )
+		self.data()[rowIndex] = element
+
+	def getElement( self, rowIndex, columnIndex ) :
+
+		if self.numColumns() == 16:
+			dimension = 4
+		else:
+			dimension = 3
+
+		y = columnIndex % dimension
+		x = (columnIndex - y) / dimension
+		item = self.data()[rowIndex]
+
+		return GafferUI._Variant.toVariant( item[x][y] )
+
+
+_DataAccessor.registerType( IECore.M33fVectorData.staticTypeId(), _MatrixDataAccessor )
+_DataAccessor.registerType( IECore.M33dVectorData.staticTypeId(), _MatrixDataAccessor )
+_DataAccessor.registerType( IECore.M44fVectorData.staticTypeId(), _MatrixDataAccessor )
+_DataAccessor.registerType( IECore.M44dVectorData.staticTypeId(), _MatrixDataAccessor )
 
 class _StringDataAccessor( _DataAccessor ) :
 
-	def __init__( self, data ) :
+	def __init__( self, data, heading = "" ) :
 
-		_DataAccessor.__init__( self, data )
+		_DataAccessor.__init__( self, data, heading = heading )
 
 	def defaultElement( self ) :
 
@@ -1038,9 +1229,9 @@ _DataAccessor.registerType( IECore.StringVectorData.staticTypeId(), _StringDataA
 
 class _InternedStringDataAccessor( _StringDataAccessor ) :
 
-	def __init__( self, data ) :
+	def __init__( self, data, heading = "" ) :
 
-		_DataAccessor.__init__( self, data )
+		_DataAccessor.__init__( self, data, heading = heading )
 
 	def getElement( self, rowIndex, columnIndex ) :
 
@@ -1131,7 +1322,7 @@ class _Delegate( QtWidgets.QStyledItemDelegate ) :
 		return None
 
 	@classmethod
-	def create( cls, data ) :
+	def create( cls, data, name = "" ) :
 
 		typeIds = [ data.typeId() ] + IECore.RunTimeTyped.baseTypeIds( data.typeId() )
 		for typeId in typeIds :
@@ -1178,6 +1369,26 @@ _Delegate.registerType( IECore.FloatVectorData.staticTypeId(), _NumericDelegate 
 _Delegate.registerType( IECore.Color3fVectorData.staticTypeId(), _NumericDelegate )
 _Delegate.registerType( IECore.Color4fVectorData.staticTypeId(), _NumericDelegate )
 _Delegate.registerType( IECore.V3fVectorData.staticTypeId(), _NumericDelegate )
+_Delegate.registerType( IECore.V2fVectorData.staticTypeId(), _NumericDelegate )
+
+_Delegate.registerType( IECore.V3iVectorData.staticTypeId(), _NumericDelegate )
+_Delegate.registerType( IECore.V2iVectorData.staticTypeId(), _NumericDelegate )
+
+_Delegate.registerType( IECore.Box2iVectorData.staticTypeId(), _NumericDelegate )
+_Delegate.registerType( IECore.Box2fVectorData.staticTypeId(), _NumericDelegate )
+_Delegate.registerType( IECore.Box2dVectorData.staticTypeId(), _NumericDelegate )
+
+_Delegate.registerType( IECore.Box3iVectorData.staticTypeId(), _NumericDelegate )
+_Delegate.registerType( IECore.Box3fVectorData.staticTypeId(), _NumericDelegate )
+_Delegate.registerType( IECore.Box3dVectorData.staticTypeId(), _NumericDelegate )
+
+_Delegate.registerType( IECore.QuatfVectorData.staticTypeId(), _NumericDelegate )
+_Delegate.registerType( IECore.QuatdVectorData.staticTypeId(), _NumericDelegate )
+
+_Delegate.registerType( IECore.M33fVectorData.staticTypeId(), _NumericDelegate )
+_Delegate.registerType( IECore.M33dVectorData.staticTypeId(), _NumericDelegate )
+_Delegate.registerType( IECore.M44fVectorData.staticTypeId(), _NumericDelegate )
+_Delegate.registerType( IECore.M44dVectorData.staticTypeId(), _NumericDelegate )
 
 class _BoolDelegate( _Delegate ) :
 

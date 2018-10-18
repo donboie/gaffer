@@ -42,8 +42,10 @@
 #include "GafferScene/Group.h"
 #include "GafferScene/ObjectSource.h"
 #include "GafferScene/SceneAlgo.h"
+#include "GafferScene/SceneReader.h"
 #include "GafferScene/Transform.h"
 
+#include "Gaffer/Animation.h"
 #include "Gaffer/Metadata.h"
 #include "Gaffer/MetadataAlgo.h"
 #include "Gaffer/Monitor.h"
@@ -59,6 +61,7 @@
 #include "tbb/spin_mutex.h"
 
 #include <memory>
+#include <unordered_set>
 
 using namespace std;
 using namespace Imath;
@@ -127,7 +130,24 @@ class CapturingMonitor : public Monitor
 			if( process->parent() )
 			{
 				ProcessMap::const_iterator it = m_processMap.find( process->parent() );
-				it->second->children.push_back( std::move( capturedProcess ) );
+				if( it != m_processMap.end() )
+				{
+					it->second->children.push_back( std::move( capturedProcess ) );
+				}
+				else
+				{
+					// We've been called for a process whose parent we have not
+					// been called for. This shouldn't happen, but currently it
+					// can if another thread is doing unrelated computes while we're
+					// trying to capture the transform computes on the UI thread.
+					// We need our scope to be limited to processes that originate
+					// from the thread our Process::Scope is on, but that is not the
+					// case (see #2806). The best we can do is ignore this, but we
+					// could still crash if a background process accesses us after
+					// we're destroyed. Output a warning so we have a trail of
+					// breadcrumbs for the future.
+					IECore::msg( IECore::Msg::Warning, "CapturingMonitor", "Unscoped process encountered" );
+				}
 			}
 			else
 			{
@@ -217,9 +237,19 @@ bool updateSelection( const CapturedProcess *process, TransformTool::Selection &
 			selection.transformSpace = transform->inPlug()->fullTransform( spacePath );
 		}
 	}
+	else if( const GafferScene::SceneReader *sceneReader = runTimeCast<const GafferScene::SceneReader>( node ) )
+	{
+		const ScenePlug::ScenePath &path = process->context->get<ScenePlug::ScenePath>( ScenePlug::scenePathContextName );
+		if( path.size() == 1 )
+		{
+			selection.transformPlug = const_cast<TransformPlug *>( sceneReader->transformPlug() );
+			selection.transformSpace = M44f();
+		}
+	}
 
 	if( selection.transformPlug )
 	{
+		selection.transformPlug = selection.transformPlug->source<TransformPlug>();
 		selection.upstreamScene = scenePlug;
 		selection.upstreamPath = process->context->get<ScenePlug::ScenePath>( ScenePlug::scenePathContextName );
 		selection.upstreamContext = process->context;
@@ -341,6 +371,49 @@ Imath::M44f TransformTool::Selection::sceneToTransformSpace() const
 	return downstreamMatrix.inverse() * upstreamMatrix * transformSpace.inverse();
 }
 
+Imath::M44f TransformTool::Selection::orientedTransform( Orientation orientation ) const
+{
+	Context::Scope scopedContext( context.get() );
+
+	// Get a matrix with the orientation we want
+
+	M44f result;
+	{
+		switch( orientation )
+		{
+			case Local :
+				result = scene->fullTransform( path );
+				break;
+			case Parent :
+				if( path.size() )
+				{
+					const ScenePlug::ScenePath parentPath( path.begin(), path.end() - 1 );
+					result = scene->fullTransform( parentPath );
+				}
+				break;
+			case World :
+				result = M44f();
+				break;
+		}
+	}
+
+	result = sansScaling( result );
+
+	// And reset the translation to put it where the pivot is
+
+	Context::Scope upstreamScope( upstreamContext.get() );
+
+	const V3f pivot = transformPlug->pivotPlug()->getValue();
+	const V3f translate = transformPlug->translatePlug()->getValue();
+	const V3f downstreamWorldPivot = (pivot + translate) * sceneToTransformSpace().inverse();
+
+	result[3][0] = downstreamWorldPivot[0];
+	result[3][1] = downstreamWorldPivot[1];
+	result[3][2] = downstreamWorldPivot[2];
+
+	return result;
+}
+
 //////////////////////////////////////////////////////////////////////////
 // TransformTool
 //////////////////////////////////////////////////////////////////////////
@@ -352,8 +425,8 @@ size_t TransformTool::g_firstPlugIndex = 0;
 TransformTool::TransformTool( SceneView *view, const std::string &name )
 	:	SelectionTool( view, name ),
 		m_handles( new HandlesGadget() ),
-		m_selectionDirty( true ),
 		m_handlesDirty( true ),
+		m_selectionDirty( true ),
 		m_dragging( false ),
 		m_mergeGroupId( 0 )
 {
@@ -362,9 +435,12 @@ TransformTool::TransformTool( SceneView *view, const std::string &name )
 	storeIndexOfNextChild( g_firstPlugIndex );
 
 	addChild( new ScenePlug( "__scene", Plug::In ) );
+	addChild( new FloatPlug( "size", Plug::In, 1.0f, 0.0f ) );
+
 	scenePlug()->setInput( view->inPlug<ScenePlug>() );
 
 	view->viewportGadget()->preRenderSignal().connect( boost::bind( &TransformTool::preRender, this ) );
+	view->viewportGadget()->keyPressSignal().connect( boost::bind( &TransformTool::keyPress, this, ::_2 ) );
 	plugDirtiedSignal().connect( boost::bind( &TransformTool::plugDirtied, this, ::_1 ) );
 
 	connectToViewContext();
@@ -378,23 +454,28 @@ TransformTool::~TransformTool()
 {
 }
 
-const TransformTool::Selection &TransformTool::selection() const
+const std::vector<TransformTool::Selection> &TransformTool::selection() const
 {
 	updateSelection();
 	return m_selection;
 }
 
+TransformTool::SelectionChangedSignal &TransformTool::selectionChangedSignal()
+{
+	return m_selectionChangedSignal;
+}
+
 Imath::M44f TransformTool::handlesTransform()
 {
 	updateSelection();
-	if( !m_selection.transformPlug )
+	if( m_selection.empty() )
 	{
 		throw IECore::Exception( "Selection not valid" );
 	}
 
 	if( m_handlesDirty )
 	{
-		updateHandles();
+		updateHandles( sizePlug()->getValue() * 75 );
 		m_handlesDirty = false;
 	}
 
@@ -411,6 +492,16 @@ const GafferScene::ScenePlug *TransformTool::scenePlug() const
 	return getChild<ScenePlug>( g_firstPlugIndex );
 }
 
+Gaffer::FloatPlug *TransformTool::sizePlug()
+{
+	return getChild<FloatPlug>( g_firstPlugIndex + 1 );
+}
+
+const Gaffer::FloatPlug *TransformTool::sizePlug() const
+{
+	return getChild<FloatPlug>( g_firstPlugIndex + 1 );
+}
+
 GafferUI::Gadget *TransformTool::handles()
 {
 	return m_handles.get();
@@ -423,7 +514,7 @@ const GafferUI::Gadget *TransformTool::handles() const
 
 bool TransformTool::affectsHandles( const Gaffer::Plug *input ) const
 {
-	return false;
+	return input == sizePlug();
 }
 
 void TransformTool::connectToViewContext()
@@ -435,10 +526,12 @@ void TransformTool::contextChanged( const IECore::InternedString &name )
 {
 	if(
 		ContextAlgo::affectsSelectedPaths( name ) ||
+		ContextAlgo::affectsLastSelectedPath( name ) ||
 		!boost::starts_with( name.string(), "ui:" )
 	)
 	{
 		m_selectionDirty = true;
+		selectionChangedSignal()( *this );
 		m_handlesDirty = true;
 	}
 }
@@ -452,7 +545,21 @@ void TransformTool::plugDirtied( const Gaffer::Plug *plug )
 	)
 	{
 		m_selectionDirty = true;
+		if( !m_dragging )
+		{
+			// See associated comment in `preRender()`, and
+			// `dragEnd()` where we emit to complete the
+			// deferral started here.
+			selectionChangedSignal()( *this );
+		}
 		m_handlesDirty = true;
+	}
+	else if( plug == sizePlug() )
+	{
+		m_handlesDirty = true;
+		view()->viewportGadget()->renderRequestSignal()(
+			view()->viewportGadget()
+		);
 	}
 
 	if( affectsHandles( plug ) )
@@ -489,7 +596,7 @@ void TransformTool::updateSelection() const
 	}
 
 	// Clear the selection.
-	m_selection = Selection();
+	m_selection.clear();
 	m_selectionDirty = false;
 
 	// If we're not active, then there's
@@ -499,17 +606,51 @@ void TransformTool::updateSelection() const
 		return;
 	}
 
-	// If there's a single path selected, then
-	// update our selection from it.
+	// Otherwise we need to populate our selection from
+	// the scene selection.
+
 	const PathMatcher selectedPaths = ContextAlgo::getSelectedPaths( view()->getContext() );
-	if( !selectedPaths.isEmpty() )
+	if( selectedPaths.isEmpty() )
 	{
-		const PathMatcher::Iterator it = selectedPaths.begin();
-		if( std::next( it ) == selectedPaths.end() )
+		return;
+	}
+
+	const ScenePlug::ScenePath lastSelectedPath = ContextAlgo::getLastSelectedPath( view()->getContext() );
+	assert( selectedPaths.match( lastSelectedPath ) & IECore::PathMatcher::ExactMatch );
+
+	Selection lastSelection;
+	std::unordered_set<Gaffer::TransformPlug *> transformPlugs;
+	for( PathMatcher::Iterator it = selectedPaths.begin(), eIt = selectedPaths.end(); it != eIt; ++it )
+	{
+		Selection selection( scenePlug(), *it, view()->getContext() );
+		if( selection.transformPlug )
 		{
-			m_selection = Selection( scenePlug(), *it, view()->getContext() );
+			// Selection is editable, but it's possible that we've already added it
+			// (multiple paths may originate from the same node). We use the `transformPlugs`
+			// set to ensure we only include any plug in the selection once.
+			if( transformPlugs.insert( selection.transformPlug.get() ).second )
+			{
+				if( *it != lastSelectedPath )
+				{
+					m_selection.push_back( selection );
+				}
+				else
+				{
+					// We'll push this back last, outside the loop
+					lastSelection = selection;
+				}
+			}
+		}
+		else
+		{
+			// Selection is not editable - give up.
+			m_selection.clear();
+			return;
 		}
 	}
+
+	assert( lastSelection.transformPlug );
+	m_selection.push_back( lastSelection );
 }
 
 void TransformTool::preRender()
@@ -525,7 +666,7 @@ void TransformTool::preRender()
 		updateSelection();
 	}
 
-	if( !m_selection.transformPlug )
+	if( m_selection.empty() )
 	{
 		m_handles->setVisible( false );
 		return;
@@ -535,51 +676,9 @@ void TransformTool::preRender()
 
 	if( m_handlesDirty )
 	{
-		updateHandles();
+		updateHandles( sizePlug()->getValue() * 75 );
 		m_handlesDirty = false;
 	}
-}
-
-Imath::M44f TransformTool::orientedTransform( Orientation orientation )
-{
-	const Selection &selection = this->selection();
-	Context::Scope scopedContext( selection.context.get() );
-
-	// Get a matrix with the orientation we want
-
-	M44f result;
-	{
-		switch( orientation )
-		{
-			case Local :
-				result = selection.scene->fullTransform( selection.path );
-				break;
-			case Parent :
-				if( selection.path.size() )
-				{
-					const ScenePlug::ScenePath parentPath( selection.path.begin(), selection.path.end() - 1 );
-					result = scenePlug()->fullTransform( parentPath );
-				}
-				break;
-			case World :
-				result = M44f();
-				break;
-		}
-	}
-
-	result = sansScaling( result );
-
-	// And reset the translation to put it where the pivot is
-
-	const V3f pivot = selection.transformPlug->pivotPlug()->getValue();
-	const V3f translate = selection.transformPlug->translatePlug()->getValue();
-	const V3f downstreamWorldPivot = (pivot + translate) * selection.sceneToTransformSpace().inverse();
-
-	result[3][0] = downstreamWorldPivot[0];
-	result[3][1] = downstreamWorldPivot[1];
-	result[3][2] = downstreamWorldPivot[2];
-
-	return result;
 }
 
 void TransformTool::dragBegin()
@@ -591,6 +690,7 @@ void TransformTool::dragEnd()
 {
 	m_dragging = false;
 	m_mergeGroupId++;
+	selectionChangedSignal()( *this );
 }
 
 std::string TransformTool::undoMergeGroup() const
@@ -598,3 +698,68 @@ std::string TransformTool::undoMergeGroup() const
 	return boost::str( boost::format( "TransformTool%1%%2%" ) % this % m_mergeGroupId );
 }
 
+bool TransformTool::keyPress( const GafferUI::KeyEvent &event )
+{
+	if( !activePlug()->getValue() )
+	{
+		return false;
+	}
+
+	if( event.key == "S" && !event.modifiers )
+	{
+		if( selection().empty() )
+		{
+			return false;
+		}
+
+		UndoScope undoScope( selection().back().transformPlug->ancestor<ScriptNode>() );
+		for( const auto &s : selection() )
+		{
+			Context::Scope contextScope( s.context.get() );
+			for( RecursiveFloatPlugIterator it( s.transformPlug.get() ); !it.done(); ++it )
+			{
+				FloatPlug *plug = it->get();
+				if( Animation::canAnimate( plug ) )
+				{
+					const float value = plug->getValue();
+					Animation::CurvePlug *curve = Animation::acquire( plug );
+					curve->addKey( new Animation::Key( s.context->getTime(), value ) );
+				}
+			}
+		}
+		return true;
+	}
+	else if( event.key == "Plus" || event.key == "Equal" )
+	{
+		sizePlug()->setValue( sizePlug()->getValue() + 0.2 );
+	}
+	else if( event.key == "Minus" || event.key == "Underscore" )
+	{
+		sizePlug()->setValue( max( sizePlug()->getValue() - 0.2, 0.2 ) );
+	}
+
+	return false;
+}
+
+bool TransformTool::canSetValueOrAddKey( const Gaffer::FloatPlug *plug )
+{
+	if( Animation::isAnimated( plug ) )
+	{
+		return !MetadataAlgo::readOnly( plug->source() );
+	}
+
+	return plug->settable() && !MetadataAlgo::readOnly( plug );
+}
+
+void TransformTool::setValueOrAddKey( Gaffer::FloatPlug *plug, float time, float value )
+{
+	if( Animation::isAnimated( plug ) )
+	{
+		Animation::CurvePlug *curve = Animation::acquire( plug );
+		curve->addKey( new Animation::Key( time, value ) );
+	}
+	else
+	{
+		plug->setValue( value );
+	}
+}

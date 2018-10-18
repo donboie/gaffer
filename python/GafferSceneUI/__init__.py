@@ -41,8 +41,10 @@ from _GafferSceneUI import *
 
 from HierarchyView import HierarchyView
 from SceneInspector import SceneInspector
+from PrimitiveInspector import PrimitiveInspector
 from FilterPlugValueWidget import FilterPlugValueWidget
 from ScenePathPlugValueWidget import ScenePathPlugValueWidget
+from TweakPlugValueWidget import TweakPlugValueWidget
 
 import SceneNodeUI
 import SceneReaderUI
@@ -72,8 +74,6 @@ import CustomAttributesUI
 import CustomOptionsUI
 import SceneViewUI
 import ShaderViewUI
-import SceneSwitchUI
-import ShaderSwitchUI
 import ShaderAssignmentUI
 import ParentConstraintUI
 import ParentUI
@@ -93,7 +93,6 @@ import CameraUI
 import SetUI
 import ClippingPlaneUI
 import FilterUI
-import FilterSwitchUI
 import PointsTypeUI
 import ParametersUI
 import TextUI
@@ -126,6 +125,7 @@ import MeshToPointsUI
 import RenderUI
 import ShaderBallUI
 import LightTweaksUI
+import CameraTweaksUI
 import LightToCameraUI
 import FilterResultsUI
 import TranslateToolUI
@@ -143,6 +143,11 @@ import GlobalShaderUI
 import CameraToolUI
 import ReverseWindingUI
 import MeshDistortionUI
+import DeleteObjectUI
+import CopyAttributesUI
+import CollectPrimitiveVariablesUI
+import PrimitiveVariableExistsUI
+import CollectTransformsUI
 
 # then all the PathPreviewWidgets. note that the order
 # of import controls the order of display.

@@ -53,6 +53,7 @@ class RendererTest( GafferTest.TestCase ) :
 
 		r = GafferScene.Private.IECoreScenePreview.Renderer.create( "3Delight" )
 		self.assertTrue( isinstance( r, GafferScene.Private.IECoreScenePreview.Renderer ) )
+		self.assertEqual( r.name(), "3Delight" )
 
 	def testSceneDescription( self ) :
 
@@ -178,9 +179,9 @@ class RendererTest( GafferTest.TestCase ) :
 		nsi = self.__parse( self.temporaryDirectory() + "/test.nsi" )
 
 		self.__assertInNSI( '"P.indices" "int" 8 [ 0 1 4 3 1 2 5 4 ]', nsi )
-		self.__assertInNSI( '"P" "vi point" 6 [ -1 -1 0 0 -1 0 1 -1 0 -1 1 0 0 1 0 1 1 0 ]', nsi )
+		self.__assertInNSI( '"P" "v point" 6 [ -1 -1 0 0 -1 0 1 -1 0 -1 1 0 0 1 0 1 1 0 ]', nsi )
 		self.__assertInNSI( '"nvertices" "int" 2 [ 4 4 ]', nsi )
-		self.__assertInNSI( '"uv" "i float[2]" 6 [ 0 0 0.5 0 1 0 0 1 0.5 1 1 1 ]', nsi )
+		self.__assertInNSI( '"uv" "float[2]" 6 [ 0 0 0.5 0 1 0 0 1 0.5 1 1 1 ]', nsi )
 		self.__assertInNSI( '"uv.indices" "int" 8 [ 0 1 4 3 1 2 5 4 ]', nsi )
 
 	def testAnimatedMesh( self ) :
@@ -208,8 +209,8 @@ class RendererTest( GafferTest.TestCase ) :
 
 		self.__assertInNSI( '"P.indices" "int" 4 [ 0 1 3 2 ]', nsi )
 		self.assertEqual( nsi.count( '"P.indices"' ), 1 )
-		self.__assertInNSI( '"P" "vi point" 4 [ -1 -1 0 1 -1 0 -1 1 0 1 1 0 ]', nsi )
-		self.__assertInNSI( '"P" "vi point" 4 [ -2 -2 0 2 -2 0 -2 2 0 2 2 0 ]', nsi )
+		self.__assertInNSI( '"P" "v point" 4 [ -1 -1 0 1 -1 0 -1 1 0 1 1 0 ]', nsi )
+		self.__assertInNSI( '"P" "v point" 4 [ -2 -2 0 2 -2 0 -2 2 0 2 2 0 ]', nsi )
 		self.__assertInNSI( '"nvertices" "int" 1 4', nsi )
 		self.assertEqual( nsi.count( '"nvertices"' ), 1 )
 
@@ -409,7 +410,8 @@ class RendererTest( GafferTest.TestCase ) :
 				parameters = {
 					"resolution" : imath.V2i( 2000, 1000 ),
 					"projection" : "perspective",
-					"perspective:fov" : 40,
+					"aperture" : imath.V2f( 6, 6 ),
+					"focalLength" : 2.0,
 					"clippingPlanes" : imath.V2f( 0.25, 10 ),
 					"shutter" : imath.V2f( 0, 1 ),
 				}
@@ -426,7 +428,7 @@ class RendererTest( GafferTest.TestCase ) :
 
 		self.__assertInNSI( '"fov" "float" 1 90', nsi )
 		self.__assertInNSI( '"resolution" "int[2]" 1 [ 2000 1000 ]', nsi )
-		self.__assertInNSI( '"screenWindow" "double[2]" 2 [ -2 -1 2 1 ]', nsi )
+		self.__assertInNSI( '"screenwindow" "double[2]" 2 [ -1.5 -0.75 1.5 0.75 ]', nsi )
 		self.__assertInNSI( '"pixelaspectratio" "float" 1 1', nsi )
 		self.__assertInNSI( '"clippingrange" "double" 2 [ 0.25 10 ]', nsi )
 		self.__assertInNSI( '"shutterrange" "double" 2 [ 0 1 ]', nsi )

@@ -38,40 +38,12 @@
 
 #include "ContextAlgoBinding.h"
 #include "HierarchyViewBinding.h"
+#include "SceneGadgetBinding.h"
 #include "ToolBinding.h"
 #include "ViewBinding.h"
 #include "VisualiserBinding.h"
 
-#include "GafferSceneUI/SceneGadget.h"
-
-#include "GafferUIBindings/GadgetBinding.h"
-
-#include "GafferBindings/NodeBinding.h"
-
-using namespace boost::python;
-using namespace IECorePython;
-using namespace GafferSceneUI;
 using namespace GafferSceneUIModule;
-
-namespace
-{
-
-GafferScene::ScenePlugPtr getScene( SceneGadget &g )
-{
-	return const_cast<GafferScene::ScenePlug *>( g.getScene() );
-}
-
-IECore::InternedStringVectorDataPtr objectAt( SceneGadget &g, IECore::LineSegment3f &l )
-{
-	IECore::InternedStringVectorDataPtr result = new IECore::InternedStringVectorData;
-	if( g.objectAt( l, result->writable() ) )
-	{
-		return result;
-	}
-	return nullptr;
-}
-
-} // namespace
 
 BOOST_PYTHON_MODULE( _GafferSceneUI )
 {
@@ -79,26 +51,8 @@ BOOST_PYTHON_MODULE( _GafferSceneUI )
 	bindViews();
 	bindTools();
 	bindVisualisers();
-
-	GafferUIBindings::GadgetClass<SceneGadget>()
-		.def( init<>() )
-		.def( "setScene", &SceneGadget::setScene )
-		.def( "getScene", &getScene )
-		.def( "setContext", &SceneGadget::setContext )
-		.def( "getContext", (Gaffer::Context *(SceneGadget::*)())&SceneGadget::getContext, return_value_policy<CastToIntrusivePtr>() )
-		.def( "setExpandedPaths", &SceneGadget::setExpandedPaths )
-		.def( "getExpandedPaths", &SceneGadget::getExpandedPaths, return_value_policy<copy_const_reference>() )
-		.def( "setMinimumExpansionDepth", &SceneGadget::setMinimumExpansionDepth )
-		.def( "getMinimumExpansionDepth", &SceneGadget::getMinimumExpansionDepth )
-		.def( "baseState", &SceneGadget::baseState, return_value_policy<CastToIntrusivePtr>() )
-		.def( "objectAt", &objectAt )
-		.def( "objectsAt", &SceneGadget::objectsAt )
-		.def( "setSelection", &SceneGadget::setSelection )
-		.def( "getSelection", &SceneGadget::getSelection, return_value_policy<copy_const_reference>() )
-		.def( "selectionBound", &SceneGadget::selectionBound )
-	;
-
 	bindHierarchyView();
+	bindSceneGadget();
 	bindContextAlgo();
 
 }

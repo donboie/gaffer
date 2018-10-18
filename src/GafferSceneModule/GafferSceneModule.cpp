@@ -42,14 +42,16 @@
 #include "FilterBinding.h"
 #include "GlobalsBinding.h"
 #include "HierarchyBinding.h"
+#include "IECoreGLPreviewBinding.h"
 #include "IOBinding.h"
-#include "LightTweaksBinding.h"
+#include "TweaksBinding.h"
 #include "MixinBinding.h"
 #include "ObjectProcessorBinding.h"
 #include "OptionsBinding.h"
 #include "PrimitiveVariablesBinding.h"
 #include "PrimitivesBinding.h"
 #include "RenderBinding.h"
+#include "RenderControllerBinding.h"
 #include "RendererAlgoBinding.h"
 #include "SceneAlgoBinding.h"
 #include "ScenePathBinding.h"
@@ -76,11 +78,13 @@ BOOST_PYTHON_MODULE( _GafferScene )
 	bindScenePath();
 	bindShader();
 	bindRender();
+	bindRenderController();
 	bindHierarchy();
 	bindObjectProcessor();
 	bindPrimitiveVariables();
-	bindLightTweaks();
+	bindTweaks();
 	bindIO();
 	bindMixin();
+	bindIECoreGLPreview();
 
 }

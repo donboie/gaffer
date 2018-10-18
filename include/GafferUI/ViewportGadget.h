@@ -44,6 +44,8 @@
 
 #include "IECoreScene/Camera.h"
 
+#include <chrono>
+
 namespace GafferUI
 {
 
@@ -88,9 +90,20 @@ class GAFFERUI_API ViewportGadget : public Gadget
 		/// a call to setViewport().
 		UnarySignal &viewportChangedSignal();
 
-		const IECoreScene::Camera *getCamera() const;
+		/// Sets whether the Viewport is in planar movement mode.
+		/// ( used for 2D UIs with a scale pixel that doesn't change with
+		/// the viewport width, such as the Node Graph )
+		void setPlanarMovement( bool planarMovement );
+		/// Return whether the viewport is currently in planar movement mode
+		bool getPlanarMovement() const;
+
+		/// Return the camera currently used to render the viewport.
+		/// This bakes in aperture and clipping planes based on tweaks
+		/// made using the ViewportGadget.
+		IECoreScene::ConstCameraPtr getCamera() const;
 		/// A copy is taken.
-		void setCamera( const IECoreScene::Camera *camera );
+		void setCamera( IECoreScene::CameraPtr camera );
+
 		const Imath::M44f &getCameraTransform() const;
 		void setCameraTransform( const Imath::M44f &transform );
 		/// A signal emitted when the camera is changed, either by
@@ -108,12 +121,6 @@ class GAFFERUI_API ViewportGadget : public Gadget
 		void setCenterOfInterest( float centerOfInterest );
 		float getCenterOfInterest();
 
-		/// By default, the motion of orthographic cameras is
-		/// constrained to the image plane during Alt+drag interaction.
-		/// To allow full 3D movement call `setOrthographic3D( true )`.
-		void setOrthographic3D( bool orthographic3D );
-		const bool getOrthographic3D() const;
-
 		void frame( const Imath::Box3f &box );
 		void frame( const Imath::Box3f &box, const Imath::V3f &viewDirection,
 			const Imath::V3f &upVector = Imath::V3f( 0, 1, 0 ) );
@@ -122,8 +129,20 @@ class GAFFERUI_API ViewportGadget : public Gadget
 
 		/// When drag tracking is enabled, the camera will automatically
 		/// move to follow drags that would otherwise be exiting the viewport.
-		void setDragTracking( bool dragTracking );
-		bool getDragTracking() const;
+		enum DragTracking
+		{
+			NoDragTracking = 0,
+			XDragTracking = 1,
+			YDragTracking = 2
+		};
+
+		void setDragTracking( unsigned dragTracking );
+		unsigned getDragTracking() const;
+
+		/// When variable aspect zoom is enabled, the two axis can be scaled
+		/// independently when performing a 2D zoom.
+		void setVariableAspectZoom( bool variableAspectZoom );
+		bool getVariableAspectZoom() const;
 
 		/// Fills the passed vector with all the Gadgets below the specified position.
 		/// The first Gadget in the list will be the frontmost, determined either by the
@@ -241,12 +260,14 @@ class GAFFERUI_API ViewportGadget : public Gadget
 		GadgetPtr m_lastButtonPressGadget;
 		GadgetPtr m_gadgetUnderMouse;
 
-		bool m_dragTracking;
+		unsigned m_dragTracking;
 		boost::signals::connection m_dragTrackingIdleConnection;
 		DragDropEvent m_dragTrackingEvent;
 		float m_dragTrackingThreshold;
 		Imath::V2f m_dragTrackingVelocity;
-		double m_dragTrackingTime;
+		std::chrono::steady_clock::time_point m_dragTrackingTime;
+
+		bool m_variableAspectZoom;
 
 		UnarySignal m_viewportChangedSignal;
 		UnarySignal m_cameraChangedSignal;

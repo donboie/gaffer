@@ -54,51 +54,6 @@ class GAFFERSCENE_API LightTweaks : public SceneElementProcessor
 
 		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::LightTweaks, LightTweaksTypeId, SceneElementProcessor );
 
-		/// Compound plug type used to represent a tweak.
-		/// Add instances of these to the tweaksPlug() to
-		/// add tweaks.
-		class TweakPlug : public Gaffer::Plug
-		{
-
-			public :
-
-				IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::LightTweaks::TweakPlug, LightTweaksTweakPlugTypeId, Gaffer::Plug );
-
-				TweakPlug( const std::string &tweakName, Gaffer::ValuePlugPtr tweakValuePlug, bool enabled = true );
-				TweakPlug( const std::string &tweakName, const IECore::Data *tweakValue, bool enabled = true );
-				/// Primarily used for serialisation.
-				TweakPlug( const std::string &name=defaultName<TweakPlug>(), Direction direction=In, unsigned flags=Default );
-
-				enum Mode
-				{
-					Replace,
-					Add,
-					Subtract,
-					Multiply
-				};
-
-				Gaffer::StringPlug *namePlug();
-				const Gaffer::StringPlug *namePlug() const;
-
-				Gaffer::BoolPlug *enabledPlug();
-				const Gaffer::BoolPlug *enabledPlug() const;
-
-				Gaffer::IntPlug *modePlug();
-				const Gaffer::IntPlug *modePlug() const;
-
-				template<typename T>
-				T *valuePlug();
-				template<typename T>
-				const T *valuePlug() const;
-
-				bool acceptsChild( const Gaffer::GraphComponent *potentialChild ) const override;
-				Gaffer::PlugPtr createCounterpart( const std::string &name, Direction direction ) const override;
-
-		};
-
-		typedef Gaffer::FilteredChildIterator<Gaffer::PlugPredicate<Gaffer::Plug::Invalid, TweakPlug> > TweakPlugIterator;
-		IE_CORE_DECLAREPTR( TweakPlug )
-
 		Gaffer::StringPlug *typePlug();
 		const Gaffer::StringPlug *typePlug() const;
 

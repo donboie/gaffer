@@ -217,9 +217,10 @@ class _Camera( Gaffer.Node ) :
 		self["options"]["options"]["renderCamera"]["value"].setValue( "/previewCamera" )
 		self["options"]["in"].setInput( self["cameraTranslate"]["out"] )
 
-		self["switch"] = GafferScene.SceneSwitch()
-		self["switch"]["in"].setInput( self["in"] )
-		self["switch"]["in1"].setInput( self["options"]["out"] )
+		self["switch"] = Gaffer.Switch()
+		self["switch"].setup( GafferScene.ScenePlug() )
+		self["switch"]["in"][0].setInput( self["in"] )
+		self["switch"]["in"][1].setInput( self["options"]["out"] )
 		self["switch"]["index"].setInput( self["addCamera"] )
 
 		self["out"] = GafferScene.ScenePlug( direction = Gaffer.Plug.Direction.Out )

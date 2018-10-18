@@ -40,7 +40,7 @@
 #include "GafferUI/Style.h"
 #include "GafferUI/ViewportGadget.h"
 
-#include "IECoreGL/Camera.h"
+#include "IECoreGL/Selector.h"
 
 #include "IECore/Export.h"
 #include "IECore/NullObject.h"
@@ -68,7 +68,7 @@ using namespace GafferUI;
 IE_CORE_DEFINERUNTIMETYPED( Handle );
 
 Handle::Handle( const std::string &name )
-	:	Gadget( name ), m_hovering( false ), m_rasterScale( 0.0f )
+	:	Gadget( name ), m_hovering( false ), m_rasterScale( 0.0f ), m_visibleOnHover( false )
 {
 	enterSignal().connect( boost::bind( &Handle::enter, this ) );
 	leaveSignal().connect( boost::bind( &Handle::leave, this ) );
@@ -98,6 +98,22 @@ float Handle::getRasterScale() const
 	return m_rasterScale;
 }
 
+void Handle::setVisibleOnHover( bool visibleOnHover )
+{
+	if( visibleOnHover == m_visibleOnHover )
+	{
+		return;
+	}
+
+	m_visibleOnHover = visibleOnHover;
+	renderRequestSignal()( this );
+}
+
+bool Handle::getVisibleOnHover() const
+{
+	return m_visibleOnHover;
+}
+
 Imath::Box3f Handle::bound() const
 {
 	// Having a raster scale makes our bound somewhat meaningless
@@ -113,41 +129,60 @@ bool Handle::hasLayer( Layer layer ) const
 
 void Handle::doRenderLayer( Layer layer, const Style *style ) const
 {
-	if( m_rasterScale > 0.0f )
+	if( m_visibleOnHover )
 	{
-		// We want our handles to be a constant length in
-		// raster space. Two things get in our way :
-		//
-		//  1. The distance from camera.
-		//  2. Scaling applied to our transform.
-
-		const ViewportGadget *viewport = ancestor<ViewportGadget>();
-
-		// Scale factor to address 1.
-		const V2f p1 = viewport->gadgetToRasterSpace( V3f( 0.0f ), this );
-		const V2f p2 = viewport->gadgetToRasterSpace( IECoreGL::Camera::upInObjectSpace(), this );
-		const float s1 = m_rasterScale / ( p1 - p2 ).length();
-
-		// Scale factor to address 2. We use fabs because we don't
-		// want to lose the change of orientation brought about by
-		// negative scaling.
-		V3f s2;
-		extractScaling( fullTransform(), s2 );
-		s2 = V3f( 1.0f / fabs( s2.x ), 1.0f / fabs( s2.y ), 1.0f / fabs( s2.z ) );
-
-		glPushMatrix();
-		glScalef( s1 * s2.x, s1 * s2.y, s1 * s2.z );
+		if( !enabled() || (!m_hovering && !IECoreGL::Selector::currentSelector() ) )
+		{
+			return;
+		}
 	}
+
+	glPushMatrix();
+	const V3f scale = rasterScaleFactor();
+	glScalef( scale.x, scale.y, scale.z );
 
 	Style::State state = getHighlighted() || m_hovering ? Style::HighlightedState : Style::NormalState;
 	state = !enabled() ? Style::DisabledState : state;
 
 	renderHandle( style, state );
 
-	if( m_rasterScale > 0.0f )
+	glPopMatrix();
+}
+
+Imath::V3f Handle::rasterScaleFactor() const
+{
+	if( m_rasterScale <= 0.0f )
 	{
-		glPopMatrix();
+		return V3f( 1 );
 	}
+
+	// We want our handles to be a constant length in
+	// raster space. Two things get in our way :
+	//
+	//  1. The distance from camera.
+	//  2. Scaling applied to our transform.
+
+	const ViewportGadget *viewport = ancestor<ViewportGadget>();
+	const M44f fullTransform = this->fullTransform();
+
+	// Scale factor to address 1.
+
+	const M44f cameraToGadget = viewport->getCameraTransform() * fullTransform.inverse();
+	V3f cameraUpInGadgetSpace = V3f( 0, 1, 0 );
+	cameraToGadget.multDirMatrix( cameraUpInGadgetSpace, cameraUpInGadgetSpace );
+
+	const V2f p1 = viewport->gadgetToRasterSpace( V3f( 0.0f ), this );
+	const V2f p2 = viewport->gadgetToRasterSpace( cameraUpInGadgetSpace, this );
+	const float s1 = m_rasterScale / ( p1 - p2 ).length();
+
+	// Scale factor to address 2. We use fabs because we don't
+	// want to lose the change of orientation brought about by
+	// negative scaling.
+	V3f s2;
+	extractScaling( fullTransform, s2 );
+	s2 = V3f( 1.0f / fabs( s2.x ), 1.0f / fabs( s2.y ), 1.0f / fabs( s2.z ) );
+
+	return s1 * s2;
 }
 
 void Handle::enter()
@@ -280,6 +315,16 @@ Handle::PlanarDrag::PlanarDrag( const Gadget *gadget, const Imath::V3f &origin, 
 	init( gadget, origin, axis0, axis1, dragBeginEvent );
 }
 
+const Imath::V3f &Handle::PlanarDrag::axis0() const
+{
+	return m_axis0;
+}
+
+const Imath::V3f &Handle::PlanarDrag::axis1() const
+{
+	return m_axis1;
+}
+
 Imath::V2f Handle::PlanarDrag::startPosition() const
 {
 	return m_dragBeginPosition;
@@ -311,6 +356,8 @@ Imath::V2f Handle::PlanarDrag::position( const DragDropEvent &event ) const
 
 void Handle::PlanarDrag::init( const Gadget *gadget, const Imath::V3f &origin, const Imath::V3f &axis0, const Imath::V3f &axis1, const DragDropEvent &dragBeginEvent )
 {
+	m_axis0 = axis0;
+	m_axis1 = axis1;
 	m_gadget = gadget;
 	const M44f transform = gadget->fullTransform();
 	m_worldOrigin = origin * transform;

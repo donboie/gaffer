@@ -54,6 +54,13 @@ FilteredSceneProcessor::FilteredSceneProcessor( const std::string &name, IECore:
 	addChild( new FilterPlug( "filter", Plug::In, filterDefault, IECore::PathMatcher::NoMatch, IECore::PathMatcher::EveryMatch, Plug::Default ) );
 }
 
+FilteredSceneProcessor::FilteredSceneProcessor( const std::string &name, size_t minInputs, size_t maxInputs )
+	:	SceneProcessor( name, minInputs, maxInputs )
+{
+	storeIndexOfNextChild( g_firstPlugIndex );
+	addChild( new FilterPlug( "filter", Plug::In, PathMatcher::NoMatch, PathMatcher::NoMatch, PathMatcher::EveryMatch, Plug::Default ) );
+}
+
 FilteredSceneProcessor::~FilteredSceneProcessor()
 {
 }
@@ -75,8 +82,7 @@ void FilteredSceneProcessor::affects( const Gaffer::Plug *input, AffectedPlugsCo
 	const ScenePlug *scenePlug = input->parent<ScenePlug>();
 	if( scenePlug && scenePlug == inPlug() )
 	{
-		const Filter *filter = runTimeCast<const Filter>( filterPlug()->source()->node() );
-		if( filter && filter->sceneAffectsMatch( scenePlug, static_cast<const ValuePlug *>( input ) ) )
+		if( filterPlug()->sceneAffectsMatch( scenePlug, static_cast<const ValuePlug *>( input ) ) )
 		{
 			outputs.push_back( filterPlug() );
 		}

@@ -40,6 +40,7 @@
 #include "GafferDelight/IECoreDelightPreview/ParameterList.h"
 
 #include "IECoreScene/Shader.h"
+#include "IECoreScene/Transform.h"
 
 #include "IECore/LRUCache.h"
 #include "IECore/MessageHandler.h"
@@ -961,6 +962,7 @@ IECore::InternedString g_frameOptionName( "frame" );
 IECore::InternedString g_cameraOptionName( "camera" );
 IECore::InternedString g_sampleMotionOptionName( "sampleMotion" );
 IECore::InternedString g_oversamplingOptionName( "dl:oversampling" );
+const char *g_screenHandle = "ieCoreDelight:defaultScreen";
 
 IE_CORE_FORWARDDECLARE( DelightRenderer )
 
@@ -987,6 +989,8 @@ class DelightRenderer final : public IECoreScenePreview::Renderer
 			m_context = NSIBegin( params.size(), params.data() );
 			m_instanceCache = new InstanceCache( m_context, ownership() );
 			m_attributesCache = new AttributesCache( m_context, ownership() );
+
+			NSICreate( m_context, g_screenHandle, "screen", 0, nullptr );
 		}
 
 		~DelightRenderer() override
@@ -998,6 +1002,11 @@ class DelightRenderer final : public IECoreScenePreview::Renderer
 			m_outputs.clear();
 			m_defaultCamera.reset();
 			NSIEnd( m_context );
+		}
+
+		IECore::InternedString name() const override
+		{
+			return "3Delight";
 		}
 
 		void option( const IECore::InternedString &name, const IECore::Object *value ) override
@@ -1102,7 +1111,15 @@ class DelightRenderer final : public IECoreScenePreview::Renderer
 				return;
 			}
 
-			m_outputs[name] = new DelightOutput( m_context, name, output, ownership() );
+			DelightOutputPtr o = new DelightOutput( m_context, name, output, ownership() );
+			m_outputs[name] = o;
+
+			NSIConnect(
+				m_context,
+				o->layerHandle().name(), "",
+				g_screenHandle, "outputlayers",
+				0, nullptr
+			);
 		}
 
 		Renderer::AttributesInterfacePtr attributes( const IECore::CompoundObject *attributes ) override
@@ -1118,12 +1135,10 @@ class DelightRenderer final : public IECoreScenePreview::Renderer
 				return nullptr;
 			}
 
-			// Because we can't query the contents of an NSI scene, we need to manually
-			// keep a track of which cameras are in existence, for use in updateCamera().
-			// We do that by storing their names in the m_cameras set.
+			// Store the camera for later use in updateCamera().
 			{
-				tbb::spin_mutex::scoped_lock lock( m_cameraSetMutex );
-				m_cameraSet.insert( objectHandle );
+				tbb::spin_mutex::scoped_lock lock( m_camerasMutex );
+				m_cameras[objectHandle] = camera;
 			}
 
 			DelightHandleSharedPtr cameraHandle(
@@ -1131,7 +1146,7 @@ class DelightRenderer final : public IECoreScenePreview::Renderer
 				// 3delight doesn't allow edits to cameras or outputs while the
 				// render is running, so we must use a custom deleter to stop
 				// the render just before the camera is deleted. This also allows
-				// us to remove the camera from the m_cameras set.
+				// us to remove the camera from m_cameras.
 				boost::bind( &DelightRenderer::cameraDeleter, DelightRendererPtr( this ), ::_1 )
 			);
 
@@ -1274,21 +1289,18 @@ class DelightRenderer final : public IECoreScenePreview::Renderer
 			std::string cameraHandle = "camera:" + m_camera;
 
 			// If we're in an interactive render, then disconnect the
-			// outputs from any secondary cameras.
+			// screen from any secondary cameras.
 			if( m_renderType == Interactive )
 			{
-				for( auto &camera : m_cameraSet )
+				for( auto &camera : m_cameras )
 				{
-					if( camera != cameraHandle )
+					if( camera.first != cameraHandle )
 					{
-						for( const auto &output : m_outputs )
-						{
-							NSIDisconnect(
-								m_context,
-								output.second->layerHandle().name(), "",
-								camera.c_str(), "outputlayers"
-							);
-						}
+						NSIDisconnect(
+							m_context,
+							g_screenHandle, "",
+							camera.first.c_str(), "screens"
+						);
 					}
 				}
 			}
@@ -1296,7 +1308,9 @@ class DelightRenderer final : public IECoreScenePreview::Renderer
 			// Check that the camera we want to use exists,
 			// and if not, create a default one.
 
-			if( m_cameraSet.find( cameraHandle ) == m_cameraSet.end() )
+			ConstCameraPtr camera;
+			const auto cameraIt = m_cameras.find( cameraHandle );
+			if( cameraIt == m_cameras.end() )
 			{
 				if( !m_camera.empty() )
 				{
@@ -1305,11 +1319,14 @@ class DelightRenderer final : public IECoreScenePreview::Renderer
 						boost::format( "Camera \"%s\" does not exist" ) % m_camera
 					);
 				}
+
+				CameraPtr defaultCamera = new Camera;
+				camera = defaultCamera;
+
 				cameraHandle = "ieCoreDelight:defaultCamera";
-				m_defaultCamera = DelightHandle(
-					m_context, cameraHandle, ownership(),
-					"orthographiccamera"
-				);
+				NodeAlgo::convert( defaultCamera.get(), m_context, cameraHandle.c_str() );
+
+				m_defaultCamera = DelightHandle( m_context, cameraHandle, ownership() );
 
 				NSIConnect(
 					m_context,
@@ -1320,25 +1337,70 @@ class DelightRenderer final : public IECoreScenePreview::Renderer
 			}
 			else
 			{
+				camera = cameraIt->second;
 				m_defaultCamera.reset();
 			}
 
-			// Set the oversampling, and connect the outputs up to the camera
+			// Connect the camera to the screen
 
-			ParameterList cameraParameters = {
+			NSIConnect(
+				m_context,
+				g_screenHandle, "",
+				cameraHandle.c_str(), "screens",
+				0, nullptr
+			);
+
+			// Update the screen
+
+			ParameterList screeenParameters = {
 				{ "oversampling", &m_oversampling, NSITypeInteger, 0, 1 }
 			};
-			NSISetAttribute( m_context, cameraHandle.c_str(), cameraParameters.size(), cameraParameters.data() );
 
-			for( const auto &output : m_outputs )
+			const V2i &resolution = camera->getResolution();
+			screeenParameters.add( { "resolution", resolution.getValue(), NSITypeInteger, 2, 1, NSIParamIsArray } );
+
+			Box2i renderRegion = camera->renderRegion();
+
+			// I can't find any support in 3delight for overscan - and if crop goes outside 0 - 1,
+			// it ignores crop.  So we clamp it.
+			renderRegion.min.x = std::max( 0, renderRegion.min.x );
+			renderRegion.max.x = std::min( resolution.x, renderRegion.max.x );
+			renderRegion.min.y = std::max( 0, renderRegion.min.y );
+			renderRegion.max.y = std::min( resolution.y, renderRegion.max.y );
+
+			if(
+				renderRegion.min.x >= renderRegion.max.x ||
+				renderRegion.min.y >= renderRegion.max.y
+			)
 			{
-				NSIConnect(
-					m_context,
-					output.second->layerHandle().name(), "",
-					cameraHandle.c_str(), "outputlayers",
-					0, nullptr
-				);
+				// 3delight doesn't support an empty crop, so just render as little as possible
+				renderRegion = Box2i( V2i( 0 ), V2i( 1 ) );
 			}
+
+			const Box2f crop( 
+				V2f(
+					renderRegion.min.x / float( resolution.x ),
+					1 - renderRegion.max.y / float( resolution.y )
+				),
+				V2f(
+					renderRegion.max.x / float( resolution.x ),
+					1 - renderRegion.min.y / float( resolution.y )
+				)
+			);
+			screeenParameters.add( { "crop", crop.min.getValue(), NSITypeFloat, 2, 2, NSIParamIsArray } );
+
+			const Box2f &screenWindow = camera->frustum();
+			const Box2d screenWindowD( screenWindow.min, screenWindow.max );
+			screeenParameters.add( { "screenwindow", screenWindowD.min.getValue(), NSITypeDouble, 2, 2, NSIParamIsArray } );
+
+			const float pixelAspectRatio = camera->getPixelAspectRatio();
+			screeenParameters.add( { "pixelaspectratio", &pixelAspectRatio, NSITypeFloat, 0, 1, 0 } );
+
+			NSISetAttribute( m_context, g_screenHandle, screeenParameters.size(), screeenParameters.data() );
+
+			/// \todo Support overscan somehow ( this would currently require modifying the screenwindow
+			/// and explicitly overriding the display window metadata on the output image? )
+
 		}
 
 		void cameraDeleter( const DelightHandle *handle )
@@ -1346,8 +1408,8 @@ class DelightRenderer final : public IECoreScenePreview::Renderer
 			if( handle->ownership() != DelightHandle::Unowned )
 			{
 				stop();
-				tbb::spin_mutex::scoped_lock lock( m_cameraSetMutex );
-				m_cameraSet.erase( handle->name() );
+				tbb::spin_mutex::scoped_lock lock( m_camerasMutex );
+				m_cameras.erase( handle->name() );
 			}
 			delete handle;
 		}
@@ -1366,10 +1428,11 @@ class DelightRenderer final : public IECoreScenePreview::Renderer
 
 		unordered_map<InternedString, ConstDelightOutputPtr> m_outputs;
 
-		typedef set<string> CameraSet;
-		CameraSet m_cameraSet;
-		tbb::spin_mutex m_cameraSetMutex;
+		typedef unordered_map<string, ConstCameraPtr> CameraMap;
+		CameraMap m_cameras;
+		tbb::spin_mutex m_camerasMutex;
 
+		DelightHandle m_screen;
 		DelightHandle m_defaultCamera;
 
 		// Registration with factory

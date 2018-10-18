@@ -36,36 +36,50 @@
 
 #include "GafferScene/Private/IECoreScenePreview/Renderer.h"
 
+#include "GafferScene/Private/IECoreGLPreview/ObjectVisualiser.h"
+#include "GafferScene/Private/IECoreGLPreview/AttributeVisualiser.h"
+
 #include "IECoreGL/CachedConverter.h"
+#include "IECoreGL/Camera.h"
 #include "IECoreGL/ColorTexture.h"
+#include "IECoreGL/CurvesPrimitive.h"
 #include "IECoreGL/DepthTexture.h"
 #include "IECoreGL/Exception.h"
 #include "IECoreGL/FrameBuffer.h"
 #include "IECoreGL/GL.h"
-#include "IECoreGL/OrthographicCamera.h"
+#include "IECoreGL/PointsPrimitive.h"
+#include "IECoreGL/Primitive.h"
 #include "IECoreGL/Renderable.h"
+#include "IECoreGL/Selector.h"
 #include "IECoreGL/ShaderStateComponent.h"
 #include "IECoreGL/State.h"
 #include "IECoreGL/ToGLCameraConverter.h"
+#include "IECoreGL/IECoreGL.h"
 
 #include "IECore/CompoundParameter.h"
 #include "IECore/MessageHandler.h"
+#include "IECore/PathMatcherData.h"
 #include "IECore/SimpleTypedData.h"
+#include "IECore/StringAlgo.h"
 #include "IECore/Writer.h"
+
+#include "OpenEXR/ImathBoxAlgo.h"
 
 #include "boost/algorithm/string/predicate.hpp"
 #include "boost/format.hpp"
 
-#include "tbb/concurrent_unordered_map.h"
-#include "tbb/concurrent_vector.h"
+#include "tbb/concurrent_queue.h"
 
+#include <functional>
 #include <unordered_map>
+#include <vector>
 
 using namespace std;
 using namespace Imath;
 using namespace IECore;
 using namespace IECoreScene;
 using namespace IECoreGL;
+using namespace IECoreGLPreview;
 
 //////////////////////////////////////////////////////////////////////////
 // Utilities
@@ -87,6 +101,38 @@ T *reportedCast( const IECore::RunTimeTyped *v, const char *type, const IECore::
 	return nullptr;
 }
 
+template<typename T>
+T parameter( const IECore::CompoundDataMap &parameters, const IECore::InternedString &name, const T &defaultValue )
+{
+	IECore::CompoundDataMap::const_iterator it = parameters.find( name );
+	if( it == parameters.end() )
+	{
+		return defaultValue;
+	}
+
+	typedef IECore::TypedData<T> DataType;
+	if( const DataType *d = reportedCast<const DataType>( it->second.get(), "parameter", name ) )
+	{
+		return d->readable();
+	}
+	else
+	{
+		return defaultValue;
+	}
+}
+
+const IECoreGL::State &selectionState()
+{
+	static IECoreGL::StatePtr s;
+	if( !s )
+	{
+		s = new IECoreGL::State( false );
+		s->add( new IECoreGL::Primitive::DrawWireframe( true ), /* override = */ true );
+		s->add( new IECoreGL::WireframeColorStateComponent( Color4f( 0.466f, 0.612f, 0.741f, 1.0f ) ), /* override = */ true );
+	}
+	return *s;
+}
+
 } // namespace
 
 //////////////////////////////////////////////////////////////////////////
@@ -106,6 +152,15 @@ class OpenGLAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 			m_state = static_pointer_cast<const State>(
 				CachedConverter::defaultCachedConverter()->convert( attributes )
 			);
+
+			IECoreGL::ConstStatePtr visualisationState;
+			m_visualisation = AttributeVisualiser::allVisualisations( attributes, visualisationState );
+			if( visualisationState )
+			{
+				StatePtr combinedState = new State( *m_state );
+				combinedState->add( const_cast<State *>( visualisationState.get() ) );
+				m_state = combinedState;
+			}
 		}
 
 		const State *state() const
@@ -113,9 +168,15 @@ class OpenGLAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 			return m_state.get();
 		}
 
+		const IECoreGL::Renderable *visualisation() const
+		{
+			return m_visualisation.get();
+		}
+
 	private :
 
 		ConstStatePtr m_state;
+		IECoreGL::ConstRenderablePtr m_visualisation;
 
 };
 
@@ -130,19 +191,47 @@ IE_CORE_DECLAREPTR( OpenGLAttributes )
 namespace
 {
 
+typedef std::function<void ()> Edit;
+typedef tbb::concurrent_queue<Edit> EditQueue;
+
 class OpenGLObject : public IECoreScenePreview::Renderer::ObjectInterface
 {
 
 	public :
 
-		OpenGLObject( const IECoreGL::ConstRenderablePtr &renderable )
-			:	m_renderable( renderable )
+		OpenGLObject( const std::string &name, const IECore::Object *object, const ConstOpenGLAttributesPtr &attributes, EditQueue &editQueue )
+			:	m_objectType( object ? object->typeId() : IECore::NullObjectTypeId ),
+				m_attributes( attributes ),
+				m_editQueue( editQueue )
 		{
+			IECore::StringAlgo::tokenize( name, '/', m_name );
+
+			if( object )
+			{
+				if( const ObjectVisualiser *visualiser = IECoreGLPreview::ObjectVisualiser::acquire( object->typeId() ) )
+				{
+					m_renderable = visualiser->visualise( object );
+				}
+				else
+				{
+					try
+					{
+						IECore::ConstRunTimeTypedPtr glObject = IECoreGL::CachedConverter::defaultCachedConverter()->convert( object );
+						m_renderable = IECore::runTimeCast<const IECoreGL::Renderable>( glObject.get() );
+					}
+					catch( ... )
+					{
+						// Leave m_renderable as null
+					}
+				}
+			}
 		}
 
 		void transform( const Imath::M44f &transform ) override
 		{
-			m_transform = transform;
+			m_editQueue.push( [this, transform]() {
+				m_transform = transform;
+			} );
 		}
 
 		void transform( const std::vector<Imath::M44f> &samples, const std::vector<float> &times ) override
@@ -152,11 +241,44 @@ class OpenGLObject : public IECoreScenePreview::Renderer::ObjectInterface
 
 		bool attributes( const IECoreScenePreview::Renderer::AttributesInterface *attributes ) override
 		{
-			m_attributes = static_cast<const OpenGLAttributes *>( attributes );
+			ConstOpenGLAttributesPtr openGLAttributes = static_cast<const OpenGLAttributes *>( attributes );
+			m_editQueue.push( [this, openGLAttributes]() {
+				m_attributes = openGLAttributes;
+			} );
 			return true;
 		}
 
-		void render( IECoreGL::State *currentState )
+		Box3f transformedBound() const
+		{
+			Box3f b;
+			if( m_renderable )
+			{
+				b.extendBy( m_renderable->bound() );
+			}
+			if( m_attributes->visualisation() )
+			{
+				b.extendBy( m_attributes->visualisation()->bound() );
+			}
+
+			if( b.isEmpty() )
+			{
+				return b;
+			}
+
+			return Imath::transform( b, m_transform );
+		}
+
+		const vector<InternedString> &name() const
+		{
+			return m_name;
+		}
+
+		bool selected( const IECore::PathMatcher &selection ) const
+		{
+			return selection.match( m_name ) & ( PathMatcher::AncestorMatch | PathMatcher::ExactMatch );
+		}
+
+		void render( IECoreGL::State *currentState, const IECore::PathMatcher &selection ) const
 		{
 			const bool haveTransform = m_transform != M44f();
 			if( haveTransform )
@@ -166,7 +288,17 @@ class OpenGLObject : public IECoreScenePreview::Renderer::ObjectInterface
 			}
 
 			IECoreGL::State::ScopedBinding scope( *m_attributes->state(), *currentState );
-			m_renderable->render( currentState );
+			IECoreGL::State::ScopedBinding selectionScope( selectionState(), *currentState, selected( selection ) );
+
+			if( m_renderable )
+			{
+				m_renderable->render( currentState );
+			}
+
+			if( m_attributes->visualisation() )
+			{
+				m_attributes->visualisation()->render( currentState );
+			}
 
 			if( haveTransform )
 			{
@@ -174,11 +306,26 @@ class OpenGLObject : public IECoreScenePreview::Renderer::ObjectInterface
 			}
 		}
 
+		IECore::TypeId objectType() const
+		{
+			return m_objectType;
+		}
+
+	protected :
+
+		EditQueue &editQueue()
+		{
+			return m_editQueue;
+		}
+
 	private :
 
+		IECore::TypeId m_objectType;
 		M44f m_transform;
 		ConstOpenGLAttributesPtr m_attributes;
 		IECoreGL::ConstRenderablePtr m_renderable;
+		vector<InternedString> m_name;
+		EditQueue &m_editQueue;
 
 };
 
@@ -193,38 +340,33 @@ IE_CORE_FORWARDDECLARE( OpenGLObject )
 namespace
 {
 
-class OpenGLCamera : public IECoreScenePreview::Renderer::ObjectInterface
+class OpenGLCamera : public OpenGLObject
 {
 
 	public :
 
-		OpenGLCamera( const IECoreScene::Camera *camera )
+		OpenGLCamera( const std::string &name, const IECoreScene::Camera *camera, const ConstOpenGLAttributesPtr &attributes, EditQueue &editQueue )
+			:	OpenGLObject( name, camera, attributes, editQueue )
 		{
 			if( camera )
 			{
 				ToGLCameraConverterPtr converter = new ToGLCameraConverter( camera );
 				m_camera = static_pointer_cast<IECoreGL::Camera>( converter->convert() );
+				m_resolution = camera->getResolution();
 			}
 			else
 			{
-				m_camera = new IECoreGL::OrthographicCamera;
+				m_camera = new IECoreGL::Camera;
+				m_resolution = V2i( 640, 480 );
 			}
 		}
 
 		void transform( const Imath::M44f &transform ) override
 		{
-			m_camera->setTransform( transform );
-		}
-
-		void transform( const std::vector<Imath::M44f> &samples, const std::vector<float> &times ) override
-		{
-			transform( samples.front() );
-		}
-
-		bool attributes( const IECoreScenePreview::Renderer::AttributesInterface *attributes ) override
-		{
-			m_attributes = static_cast<const OpenGLAttributes *>( attributes );
-			return true;
+			OpenGLObject::transform( transform );
+			editQueue().push( [this, transform]() {
+				m_camera->setTransform( transform );
+			} );
 		}
 
 		const IECoreGL::Camera *camera() const
@@ -232,10 +374,16 @@ class OpenGLCamera : public IECoreScenePreview::Renderer::ObjectInterface
 			return m_camera.get();
 		}
 
+		const V2i getResolution() const
+		{
+			return m_resolution;
+		}
+
 	private :
 
 		IECoreGL::CameraPtr m_camera;
 		ConstOpenGLAttributesPtr m_attributes;
+		V2i m_resolution;
 
 };
 
@@ -256,7 +404,7 @@ class OpenGLRenderer final : public IECoreScenePreview::Renderer
 	public :
 
 		OpenGLRenderer( RenderType renderType, const std::string &fileName )
-			:	m_renderType( renderType )
+			:	m_renderType( renderType ), m_baseStateOptions( new CompoundObject )
 		{
 			if( renderType == SceneDescription )
 			{
@@ -266,6 +414,11 @@ class OpenGLRenderer final : public IECoreScenePreview::Renderer
 
 		~OpenGLRenderer() override
 		{
+		}
+
+		IECore::InternedString name() const override
+		{
+			return "OpenGL";
 		}
 
 		void option( const IECore::InternedString &name, const IECore::Object *value ) override
@@ -283,9 +436,39 @@ class OpenGLRenderer final : public IECoreScenePreview::Renderer
 				}
 				return;
 			}
-			else if( name == "frame" )
+			else if( name == "frame" || name == "sampleMotion" )
 			{
-				// We know what this means, we just have no use for it.
+				// We know what these mean, we just have no use for them.
+				return;
+			}
+			else if( name == "gl:selection" )
+			{
+				if( value == nullptr )
+				{
+					m_selection.clear();
+				}
+				else if( auto d = reportedCast<const IECore::PathMatcherData>( value, "option", name ) )
+				{
+					m_selection = d->readable();
+				}
+				return;
+			}
+			else if(
+				boost::starts_with( name.string(), "gl:primitive:" ) ||
+				boost::starts_with( name.string(), "gl:pointsPrimitive:" ) ||
+				boost::starts_with( name.string(), "gl:curvesPrimitive:" ) ||
+				boost::starts_with( name.string(), "gl:smoothing:" )
+			)
+			{
+				if( value )
+				{
+					m_baseStateOptions->members()[name] = value->copy();
+				}
+				else
+				{
+					m_baseStateOptions->members().erase( name );
+				}
+				m_baseState = nullptr; // We'll update it lazily in `baseState()`
 				return;
 			}
 			else if( boost::contains( name.string(), ":" ) && !boost::starts_with( name.string(), "gl:" ) )
@@ -316,30 +499,23 @@ class OpenGLRenderer final : public IECoreScenePreview::Renderer
 
 		ObjectInterfacePtr camera( const std::string &name, const IECoreScene::Camera *camera, const AttributesInterface *attributes ) override
 		{
-			OpenGLCameraPtr result = new OpenGLCamera( camera );
-			result->attributes( attributes );
-			m_cameras[name] = result;
+			OpenGLCameraPtr result = new OpenGLCamera( name, camera, static_cast<const OpenGLAttributes *>( attributes ), m_editQueue );
+			m_editQueue.push( [this, result, name]() {
+				m_objects.push_back( result );
+				m_cameras[name] = result;
+			} );
 			return result;
 		}
 
 		ObjectInterfacePtr light( const std::string &name, const IECore::Object *object, const AttributesInterface *attributes ) override
 		{
-			IECore::msg( IECore::Msg::Warning, "IECoreGL::Renderer::light", "Lights are not implemented" );
-			return nullptr;
+			return this->object( name, object, attributes );
 		}
 
 		Renderer::ObjectInterfacePtr object( const std::string &name, const IECore::Object *object, const AttributesInterface *attributes ) override
 		{
-			IECoreGL::ConstRenderablePtr renderable = runTimeCast<const IECoreGL::Renderable>(
-				CachedConverter::defaultCachedConverter()->convert( object )
-			);
-			if( !renderable )
-			{
-				return nullptr;
-			}
-			OpenGLObjectPtr result = new OpenGLObject( renderable );
-			result->attributes( attributes );
-			m_objects.push_back( result );
+			OpenGLObjectPtr result = new OpenGLObject( name, object, static_cast<const OpenGLAttributes *>( attributes ), m_editQueue );
+			m_editQueue.push( [this, result]() { m_objects.push_back( result ); } );
 			return result;
 		}
 
@@ -368,10 +544,25 @@ class OpenGLRenderer final : public IECoreScenePreview::Renderer
 			}
 		}
 
+		virtual IECore::DataPtr command( const IECore::InternedString name, const IECore::CompoundDataMap &parameters ) override
+		{
+			if( name == "gl:queryBound" )
+			{
+				return queryBound( parameters );
+			}
+			else if( name == "gl:querySelection" )
+			{
+				return querySelectedObjects( parameters );
+			}
+
+			throw IECore::Exception( "Unknown command" );
+		}
+
 	private :
 
 		void renderInteractive()
 		{
+			processQueue();
 			removeDeletedObjects();
 			CachedConverter::defaultCachedConverter()->clearUnused();
 
@@ -380,10 +571,37 @@ class OpenGLRenderer final : public IECoreScenePreview::Renderer
 			glPushAttrib( GL_ALL_ATTRIB_BITS );
 
 				State::bindBaseState();
-				StatePtr state = new State( /* complete = */ true );
+				State *state = baseState();
 				state->bind();
 
-				renderObjects( state.get() );
+				if( IECoreGL::Selector *selector = IECoreGL::Selector::currentSelector() )
+				{
+					// IECoreGL expects us to bind `selector->baseState()` here, so the
+					// selector can control a few specific parts of the state.
+					// That overrides _all_ of our own state though, including things that
+					// are crucial to accurate selection because they change the size of
+					// primitives on screen. So we need to bind the selection state and then
+					// rebind the crucial bits of our state back on top of it.
+					/// \todo Change IECoreGL::Selector so it provides a partial state object
+					/// containing only the things it needs to change.
+					IECoreGL::StatePtr shapeState = new IECoreGL::State( /* complete = */ false );
+					shapeState->add( state->get<IECoreGL::PointsPrimitive::UseGLPoints>() );
+					shapeState->add( state->get<IECoreGL::PointsPrimitive::GLPointWidth>() );
+					shapeState->add( state->get<IECoreGL::CurvesPrimitive::UseGLLines>() );
+					shapeState->add( state->get<IECoreGL::CurvesPrimitive::IgnoreBasis>() );
+					shapeState->add( state->get<IECoreGL::CurvesPrimitive::GLLineWidth>() );
+					IECoreGL::State::ScopedBinding selectorStateBinding(
+						*selector->baseState(), const_cast<IECoreGL::State &>( *state )
+					);
+					IECoreGL::State::ScopedBinding shapeStateBinding(
+						*shapeState, const_cast<IECoreGL::State &>( *state )
+					);
+					renderObjects( state );
+				}
+				else
+				{
+					renderObjects( state );
+				}
 
 			glPopAttrib();
 			glUseProgram( prevProgram );
@@ -391,6 +609,9 @@ class OpenGLRenderer final : public IECoreScenePreview::Renderer
 
 		void renderBatch()
 		{
+			IECoreGL::init();
+
+			processQueue();
 			CachedConverter::defaultCachedConverter()->clearUnused();
 
 			OpenGLCameraPtr camera;
@@ -404,10 +625,15 @@ class OpenGLRenderer final : public IECoreScenePreview::Renderer
 			}
 			else
 			{
-				camera = new OpenGLCamera( nullptr );
+				camera = new OpenGLCamera( "/defaultCamera", nullptr, nullptr, m_editQueue );
 			}
 
-			const V2i resolution = camera->camera()->getResolution();
+			// We don't want to render the visualiser of the camera we're looking through.  For the viewport,
+			// we do this using SceneView::deleteObjectFilter, but here, instead of setting up a filter,
+			// we just delete the camera from the list of things to render.
+			m_objects.erase( std::remove( m_objects.begin(), m_objects.end(), camera), m_objects.end() );
+
+			const V2i resolution = camera->getResolution();
 			IECoreGL::FrameBufferPtr frameBuffer = new FrameBuffer;
 			frameBuffer->setColor( new ColorTexture( resolution.x, resolution.y ) );
 			IECoreGL::Exception::throwIfError();
@@ -426,12 +652,12 @@ class OpenGLRenderer final : public IECoreScenePreview::Renderer
 				glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
 
 				State::bindBaseState();
-				StatePtr state = new State( /* complete = */ true );
+				State *state = baseState();
 				state->bind();
 
-				camera->camera()->render( state.get() );
+				camera->camera()->render( state );
 
-				renderObjects( state.get() );
+				renderObjects( state );
 
 				writeOutputs( frameBuffer.get() );
 
@@ -439,9 +665,18 @@ class OpenGLRenderer final : public IECoreScenePreview::Renderer
 			glUseProgram( prevProgram );
 		}
 
+		void processQueue()
+		{
+			Edit edit;
+			while( m_editQueue.try_pop( edit ) )
+			{
+				edit();
+			}
+		}
+
 		// During interactive renders, the client code controls the lifetime
 		// of objects by managing ObjectInterfacePtrs. But we also hold a
-		// reference to the objects ourselves so that we iterate to render them.
+		// reference to the objects ourselves so we can iterate to render them.
 		// Here we remove any objects with only a single reference - our own.
 		// This does mean we delete objects later than the client might expect,
 		// but this is actually necessary anyway, because we can only delete GL
@@ -450,9 +685,10 @@ class OpenGLRenderer final : public IECoreScenePreview::Renderer
 		{
 			for( auto it = m_cameras.begin(); it != m_cameras.end(); )
 			{
-				if( it->second->refCount() == 1 )
+				// Cameras are referenced by both m_cameras and m_objects
+				if( it->second->refCount() == 2 )
 				{
-					it = m_cameras.unsafe_erase( it );
+					it = m_cameras.erase( it );
 				}
 				else
 				{
@@ -460,22 +696,28 @@ class OpenGLRenderer final : public IECoreScenePreview::Renderer
 				}
 			}
 
-			OpenGLObjectVector objectsToKeep;
-			for( const auto &o : m_objects )
-			{
-				if( o->refCount() == 1 )
-				{
-					objectsToKeep.push_back( o );
-				}
-			}
-			m_objects.swap( objectsToKeep );
+			m_objects.erase(
+				remove_if(
+					m_objects.begin(),
+					m_objects.end(),
+					[]( const OpenGLObjectPtr &o ) { return o->refCount() == 1; }
+				),
+				m_objects.end()
+			);
 		}
 
 		void renderObjects( IECoreGL::State *currentState )
 		{
+			IECoreGL::Selector *selector = IECoreGL::Selector::currentSelector();
+
+			GLuint i = 1;
 			for( const auto &o : m_objects )
 			{
-				o->render( currentState );
+				if( selector )
+				{
+					selector->loadName( i++ );
+				}
+				o->render( currentState, m_selection );
 			}
 		}
 
@@ -517,14 +759,107 @@ class OpenGLRenderer final : public IECoreScenePreview::Renderer
 			}
 		}
 
-		RenderType m_renderType;
+		DataPtr queryBound( const CompoundDataMap &parameters )
+		{
+			const bool selected = parameter<bool>( parameters, "selection", false );
 
+			processQueue();
+			removeDeletedObjects();
+
+			Box3f result;
+			for( const auto &o : m_objects )
+			{
+				if( selected && !o->selected( m_selection ) )
+				{
+					continue;
+				}
+				result.extendBy( o->transformedBound() );
+			}
+			return new Box3fData( result );
+		}
+
+		DataPtr querySelectedObjects( const CompoundDataMap &parameters )
+		{
+			ConstUIntVectorDataPtr names;
+			CompoundDataMap::const_iterator it = parameters.find( "selection" );
+			if( it != parameters.end() )
+			{
+				names = runTimeCast<const UIntVectorData>( it->second );
+			}
+			if( !names )
+			{
+				throw InvalidArgumentException( "Expected UIntVectorData \"selection\" parameter" );
+			}
+
+			vector<IECore::TypeId> maskTypeIds;
+			it = parameters.find( "mask" );
+			if( it != parameters.end() )
+			{
+				if( ConstStringVectorDataPtr typeNames = runTimeCast<const StringVectorData>( it->second ) )
+				{
+					for( const auto &n : typeNames->readable() )
+					{
+						maskTypeIds.push_back( RunTimeTyped::typeIdFromTypeName( n.c_str() ) );
+					}
+				}
+				else
+				{
+					throw InvalidArgumentException( "Expected StringVectorData for \"mask\" parameter" );
+				}
+			}
+			else
+			{
+				maskTypeIds.push_back( IECore::ObjectTypeId );
+			}
+
+			PathMatcher result;
+			for( auto i : names->readable() )
+			{
+				const OpenGLObject *o = m_objects[i-1].get();
+				for( auto t : maskTypeIds )
+				{
+					if( t == o->objectType() || RunTimeTyped::inheritsFrom( o->objectType(), t ) )
+					{
+						result.addPath( o->name() );
+						break;
+					}
+				}
+			}
+
+			return new PathMatcherData( result );
+		}
+
+		IECoreGL::State *baseState()
+		{
+			if( !m_baseState )
+			{
+				m_baseState = new IECoreGL::State( /* complete = */ true );
+				IECoreGL::ConstStatePtr optionsState = static_pointer_cast<const State>(
+					CachedConverter::defaultCachedConverter()->convert( m_baseStateOptions.get() )
+				);
+				m_baseState->add( const_pointer_cast<State>( optionsState ) );
+			}
+			return m_baseState.get();
+		}
+
+		// Global options
+		RenderType m_renderType;
 		string m_camera;
+		IECore::PathMatcher m_selection;
+		IECore::CompoundObjectPtr m_baseStateOptions;
+		IECoreGL::StatePtr m_baseState;
+
+		// Queue used to pass edits from background threads to the render thread.
+		EditQueue m_editQueue;
+
+		// Render state. Updated on the render thread by processing Edits
+		// from m_editQueue.
 
 		unordered_map<InternedString, ConstOutputPtr> m_outputs;
-		typedef tbb::concurrent_unordered_map<string, OpenGLCameraPtr> CameraMap;
+		typedef std::unordered_map<string, OpenGLCameraPtr> CameraMap;
 		CameraMap m_cameras;
-		typedef tbb::concurrent_vector<OpenGLObjectPtr> OpenGLObjectVector;
+
+		typedef std::vector<OpenGLObjectPtr> OpenGLObjectVector;
 		OpenGLObjectVector m_objects;
 
 		// Registration with factory

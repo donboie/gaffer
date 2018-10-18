@@ -216,11 +216,14 @@ bool convertValue( void *dst, TypeDesc dstType, const void *src, TypeDesc srcTyp
 		srcType.arraylen = 2;
 	}
 
-	if( dstType.aggregate == TypeDesc::VEC2 && srcType.aggregate == TypeDesc::VEC3 )
+	if(
+		( dstType.aggregate == TypeDesc::VEC2 || dstType.aggregate == TypeDesc::VEC3 ) &&
+		srcType.aggregate > dstType.aggregate && srcType.aggregate <= TypeDesc::VEC4
+	)
 	{
-		// OSL doesn't know how to convert VEC3->VEC2, so we encourage it
-		// by truncating srcType.
-		srcType.aggregate = TypeDesc::VEC2;
+		// OSL doesn't know how to do truncating vector conversions, so we
+		// encourage it by truncating srcType.
+		srcType.aggregate = dstType.aggregate;
 	}
 
 	if( ShadingSystem::convert_value( dst, dstType, src, srcType ) )
@@ -577,48 +580,35 @@ OSL::ShadingSystem *shadingSystem()
 		g_textureSystem
 	);
 
-	struct ClosureDefinition{
-		const char *name;
-		int id;
-		ClosureParam parameters[32];
-		PrepareClosureFunc prepare;
+	ClosureParam emissionParams[] = {
+		CLOSURE_FINISH_PARAM( EmissionParameters ),
+	};
+	
+
+	ClosureParam debugParams[] = {
+		CLOSURE_STRING_PARAM( DebugParameters, name ),
+		CLOSURE_STRING_KEYPARAM( DebugParameters, type, "type" ),
+		CLOSURE_COLOR_KEYPARAM( DebugParameters, value, "value" ),
+		CLOSURE_MATRIX_KEYPARAM( DebugParameters, matrixValue, "matrixValue"),
+		CLOSURE_STRING_KEYPARAM( DebugParameters, stringValue, "stringValue"),
+		CLOSURE_FINISH_PARAM( DebugParameters )
 	};
 
-	ClosureDefinition closureDefinitions[] = {
-		{
-			"emission",
-			EmissionClosureId,
-			{
-				CLOSURE_FINISH_PARAM( EmissionParameters )
-			}
-		},
-		{
-			"debug",
-			DebugClosureId,
-			{
-				CLOSURE_STRING_PARAM( DebugParameters, name ),
-				CLOSURE_STRING_KEYPARAM( DebugParameters, type, "type" ),
-				CLOSURE_COLOR_KEYPARAM( DebugParameters, value, "value" ),
-				CLOSURE_MATRIX_KEYPARAM( DebugParameters, matrixValue, "matrixValue"),
-				CLOSURE_STRING_KEYPARAM( DebugParameters, stringValue, "stringValue"),
-				CLOSURE_FINISH_PARAM( DebugParameters )
-			},
-			DebugParameters::prepare
-		},
-		// end marker
-		{ nullptr, 0, {} }
-	};
+	g_shadingSystem->register_closure(
+		/* name */ "emission",
+		/* id */ EmissionClosureId,
+		/* params */ emissionParams,
+		/* prepare */ nullptr,
+		/* setup */ nullptr
+	);
 
-	for( int i = 0; closureDefinitions[i].name; ++i )
-	{
-		g_shadingSystem->register_closure(
-			closureDefinitions[i].name,
-			closureDefinitions[i].id,
-			closureDefinitions[i].parameters,
-			closureDefinitions[i].prepare,
-			nullptr
-		);
-	}
+	g_shadingSystem->register_closure(
+		/* name */ "debug",
+		/* id */ DebugClosureId,
+		/* params */ debugParams,
+		/* prepare */ DebugParameters::prepare,
+		/* setup */ nullptr
+	);
 
 	if( const char *searchPath = getenv( "OSL_SHADER_PATHS" ) )
 	{
@@ -1071,6 +1061,8 @@ void ShadingEngine::queryContextVariablesAndAttributesNeeded()
 			{
 				m_timeNeeded = true;
 			}
+
+			m_attributesNeeded.insert( globalsNames[i].string() );
 		}
 	}
 
@@ -1097,7 +1089,7 @@ void ShadingEngine::queryContextVariablesAndAttributesNeeded()
 			}
 			else
 			{
-				m_attributesNeeded.insert( std::make_pair( scopeNames[i].string(), attributeNames[i].string() ) );
+				m_attributesNeeded.insert( attributeNames[i].string()  );
 			}
 		}
 	}
@@ -1290,12 +1282,26 @@ IECore::CompoundDataPtr ShadingEngine::shade( const IECore::CompoundData *points
 	return results.results();
 }
 
-bool ShadingEngine::needsAttribute( const std::string &scope, const std::string &name ) const
+bool ShadingEngine::needsAttribute( const std::string &name ) const
 {
+	if( name == "P" )
+	{
+		return true;
+	}
+
+	if( name == "uv" )
+	{
+		if ( m_attributesNeeded.find( "u" ) != m_attributesNeeded.end() || m_attributesNeeded.find( "v" ) != m_attributesNeeded.end() )
+		{
+			return true;
+		}
+	}
+
 	if( m_unknownAttributesNeeded )
 	{
 		return true;
 	}
 
-	return m_attributesNeeded.find( std::make_pair( scope, name ) ) != m_attributesNeeded.end();
+
+	return m_attributesNeeded.find(  name  ) != m_attributesNeeded.end();
 }

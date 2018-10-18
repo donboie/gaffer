@@ -80,7 +80,7 @@ class SubGraphTest( GafferTest.TestCase ) :
 		b["a"]["op1"].setInput( b["i"].plug() )
 		self.assertEqual( b["a"]["op1"].source(), b["i"].promotedPlug() )
 
-		b["s"] = Gaffer.SwitchComputeNode()
+		b["s"] = Gaffer.Switch()
 		b["s"].setup( b["i"].plug() )
 		b["s"]["in"][0].setInput( b["i"].plug() )
 		b["s"]["in"][1].setInput( b["a"]["sum"] )
@@ -98,6 +98,19 @@ class SubGraphTest( GafferTest.TestCase ) :
 		b = Gaffer.Box()
 		b["o"] = Gaffer.BoxOut()
 		b["o"].setup( Gaffer.IntPlug( "p" ) )
+
+		self.assertIsNone( b.correspondingInput( b["out"] ) )
+
+	def testCorrespondingInputWithUnconnectedInternalInput( self ) :
+
+		b = Gaffer.Box()
+		b["n"] = GafferTest.AddNode()
+
+		b["o"] = Gaffer.BoxOut()
+		b["o"].setup( b["n"]["sum"] )
+		b["o"]["in"].setInput( b["n"]["sum"] )
+
+		Gaffer.PlugAlgo.promote( b["n"]["enabled"] )
 
 		self.assertIsNone( b.correspondingInput( b["out"] ) )
 

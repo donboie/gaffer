@@ -51,15 +51,22 @@ class ParallelAlgoTest( GafferTest.TestCase ) :
 	class ExpectedUIThreadCall( object ) :
 
 		__conditionStack = []
+		__conditionStackMutex = threading.Lock()
+		__callHandlerRegistered = False
 
 		def __enter__( self ) :
 
 			self.__condition = threading.Condition()
 			self.__condition.toCall = None
-			self.__conditionStack.append( self.__condition )
 
-			if len( self.__conditionStack ) == 1 :
-				self.__callOnUIThreadConnection = Gaffer.ParallelAlgo.callOnUIThreadSignal().connect( self.__callOnUIThread )
+			with self.__conditionStackMutex :
+				self.__conditionStack.append( self.__condition )
+
+			self.__registeredCallHandler = False
+			if not self.__class__.__callHandlerRegistered :
+				Gaffer.ParallelAlgo.registerUIThreadCallHandler( self.__callOnUIThread )
+				self.__class__.__callHandlerRegistered = True
+				self.__registeredCallHandler = True
 
 		def __exit__( self, type, value, traceBack ) :
 
@@ -71,14 +78,19 @@ class ParallelAlgoTest( GafferTest.TestCase ) :
 				self.__condition.toCall()
 				self.__condition.toCall = None
 
-			self.__callOnUIThreadConnection = None
-			self.__conditionStack.pop()
+			if self.__registeredCallHandler :
+				assert( self.__class__.__callHandlerRegistered == True )
+				Gaffer.ParallelAlgo.registerUIThreadCallHandler( None )
+				self.__class__.__callHandlerRegistered = False
 
 		@classmethod
 		def __callOnUIThread( cls, f ) :
 
-			condition = cls.__conditionStack[-1]
+			with cls.__conditionStackMutex :
+				condition = cls.__conditionStack.pop()
+
 			with condition :
+				assert( condition.toCall is None )
 				condition.toCall = f
 				condition.notify()
 
@@ -101,6 +113,45 @@ class ParallelAlgoTest( GafferTest.TestCase ) :
 
 		self.assertEqual( s.getName(), "test" )
 		self.assertEqual( s.uiThreadId, thread.get_ident() )
+
+	def testNestedCallOnUIThread( self ) :
+
+		# This is testing our `ExpectedUIThreadCall` utility
+		# class more than it's testing `ParallelAlgo`.
+
+		s = Gaffer.ScriptNode()
+
+		def uiThreadFunction1() :
+
+			s.setName( "test" )
+			s.uiThreadId1 = thread.get_ident()
+
+		def uiThreadFunction2() :
+
+			s["fileName"].setValue( "test" )
+			s.uiThreadId2 = thread.get_ident()
+
+		with self.ExpectedUIThreadCall() :
+
+			t1 = threading.Thread(
+				target = lambda : Gaffer.ParallelAlgo.callOnUIThread( uiThreadFunction1 )
+			)
+			t1.start()
+
+			with self.ExpectedUIThreadCall() :
+
+				t2 = threading.Thread(
+					target = lambda : Gaffer.ParallelAlgo.callOnUIThread( uiThreadFunction2 )
+				)
+				t2.start()
+
+		self.assertEqual( s.getName(), "test" )
+		self.assertEqual( s.uiThreadId1, thread.get_ident() )
+		self.assertEqual( s["fileName"].getValue(), "test" )
+		self.assertEqual( s.uiThreadId2, thread.get_ident() )
+
+		t1.join()
+		t2.join()
 
 	def testCallOnBackgroundThread( self ) :
 

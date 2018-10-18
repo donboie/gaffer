@@ -66,18 +66,18 @@ class OSLObjectTest( GafferOSLTest.OSLTestCase ) :
 		inPoint = GafferOSL.OSLShader()
 		inPoint.loadShader( "ObjectProcessing/InPoint" )
 
-		splitPoint = GafferOSL.OSLShader()
-		splitPoint.loadShader( "Utility/SplitPoint" )
-		splitPoint["parameters"]["p"].setInput( inPoint["out"]["value"] )
+		vectorToFloat = GafferOSL.OSLShader()
+		vectorToFloat.loadShader( "Conversion/VectorToFloat" )
+		vectorToFloat["parameters"]["p"].setInput( inPoint["out"]["value"] )
 
-		buildPoint = GafferOSL.OSLShader()
-		buildPoint.loadShader( "Utility/BuildPoint" )
-		buildPoint["parameters"]["x"].setInput( splitPoint["out"]["y"] )
-		buildPoint["parameters"]["y"].setInput( splitPoint["out"]["x"] )
+		floatToVector = GafferOSL.OSLShader()
+		floatToVector.loadShader( "Conversion/FloatToVector" )
+		floatToVector["parameters"]["x"].setInput( vectorToFloat["out"]["y"] )
+		floatToVector["parameters"]["y"].setInput( vectorToFloat["out"]["x"] )
 
 		outPoint = GafferOSL.OSLShader()
 		outPoint.loadShader( "ObjectProcessing/OutPoint" )
-		outPoint["parameters"]["value"].setInput( buildPoint["out"]["p"] )
+		outPoint["parameters"]["value"].setInput( floatToVector["out"]["p"] )
 
 		primVarShader = GafferOSL.OSLShader()
 		primVarShader.loadShader( "ObjectProcessing/OutObject" )
@@ -168,7 +168,8 @@ class OSLObjectTest( GafferOSLTest.OSLTestCase ) :
 
 		script = Gaffer.ScriptNode()
 		script["object"] = GafferOSL.OSLObject()
-		script["switch"] = GafferScene.ShaderSwitch()
+		script["switch"] = Gaffer.Switch()
+		script["switch"].setup( Gaffer.Plug() )
 
 		# We're testing a backwards compatibility special case that is
 		# only enabled when loading a script, hence the use of `execute()`.
@@ -179,7 +180,8 @@ class OSLObjectTest( GafferOSLTest.OSLTestCase ) :
 
 		script = Gaffer.ScriptNode()
 		script["object"] = GafferOSL.OSLObject()
-		script["switch"] = GafferScene.ShaderSwitch()
+		script["switch"] = Gaffer.Switch()
+		script["switch"].setup( Gaffer.Plug() )
 		script["dot"] = Gaffer.Dot()
 		script["dot"].setup( script["switch"]["out"] )
 
@@ -271,19 +273,19 @@ class OSLObjectTest( GafferOSLTest.OSLTestCase ) :
 		s.addChild( inPoint )
 		inPoint.loadShader( "ObjectProcessing/InPoint" )
 
-		vectorAdd = GafferOSL.OSLShader( "VectorAdd" )
-		s.addChild( vectorAdd )
-		vectorAdd.loadShader( "Maths/VectorAdd" )
-		vectorAdd["parameters"]["b"].setValue( imath.V3f( 1, 2, 3 ) )
+		addVector = GafferOSL.OSLShader( "AddVector" )
+		s.addChild( addVector )
+		addVector.loadShader( "Maths/AddVector" )
+		addVector["parameters"]["b"].setValue( imath.V3f( 1, 2, 3 ) )
 
-		vectorAdd["parameters"]["a"].setInput( inPoint["out"]["value"] )
+		addVector["parameters"]["a"].setInput( inPoint["out"]["value"] )
 
 		outPoint = GafferOSL.OSLShader( "OutPoint" )
 		s.addChild( outPoint )
 		outPoint.loadShader( "ObjectProcessing/OutPoint" )
 		outPoint['parameters']['name'].setValue("P_copy")
 
-		outPoint["parameters"]["value"].setInput( vectorAdd["out"]["out"] )
+		outPoint["parameters"]["value"].setInput( addVector["out"]["out"] )
 
 		outObject = GafferOSL.OSLShader( "OutObject" )
 		s.addChild( outObject )
@@ -425,6 +427,49 @@ class OSLObjectTest( GafferOSLTest.OSLTestCase ) :
 		self.assertEqual( planeObject["out_foo"].data[6], 1)
 		self.assertEqual( planeObject["out_foo"].data[7], 1)
 		self.assertEqual( planeObject["out_foo"].data[8], 1)
+
+	def testCanShadeIndexedPrimVar( self ) :
+
+		points = IECoreScene.PointsPrimitive( 4096 )
+
+		points["P"] = IECoreScene.PrimitiveVariable( IECoreScene.PrimitiveVariable.Interpolation.Vertex,
+			IECore.V3fVectorData( [imath.V3f( 1, 2, 3 ), imath.V3f( 4, 5, 6 )] ), IECore.IntVectorData( [1, 0] * 2048 ) )
+
+		objectToScene = GafferScene.ObjectToScene()
+		objectToScene['object'].setValue( points )
+
+		oslObject = GafferOSL.OSLObject()
+		oslObject['in'].setInput( objectToScene["out"] )
+
+		inPoint = GafferOSL.OSLShader( "InPoint" )
+		inPoint.loadShader( "ObjectProcessing/InPoint" )
+
+		outPoint = GafferOSL.OSLShader( "OutPoint" )
+		outPoint.loadShader( "ObjectProcessing/OutPoint" )
+
+		outObject = GafferOSL.OSLShader( "OutObject" )
+		outObject.loadShader( "ObjectProcessing/OutObject" )
+
+		oslObject["shader"].setInput( outObject["out"] )
+
+		outPoint["parameters"]["value"].setInput( inPoint["out"]["value"] )
+		outPoint["parameters"]["value"]["x"].setInput( inPoint["out"]["value"]["x"] )
+		outPoint["parameters"]["value"]["y"].setInput( inPoint["out"]["value"]["y"] )
+		outPoint["parameters"]["value"]["z"].setInput( inPoint["out"]["value"]["z"] )
+
+		outObject["parameters"]["in0"].setInput( outPoint["out"]["primitiveVariable"] )
+
+		filter = GafferScene.PathFilter()
+		filter["paths"].setValue( IECore.StringVectorData( ["/object"] ) )
+
+		oslObject["filter"].setInput( filter["out"] )
+
+		processedPoints = oslObject['out'].object( "/object" )
+
+		# currently the P should be expanded.
+		self.assertEqual( processedPoints["P"].data,
+			IECore.V3fVectorData( [imath.V3f( 4, 5, 6 ), imath.V3f( 1, 2, 3 )] * 2048, IECore.GeometricData.Interpretation.Point ) )
+		self.assertEqual( processedPoints["P"].indices, None )
 
 	def testTextureOrientation( self ) :
 
@@ -654,6 +699,56 @@ class OSLObjectTest( GafferOSLTest.OSLTestCase ) :
 			)
 		)
 		self.assertEqual( mesh["uv"].indices, None )
+
+	def testColor4fInput( self ) :
+
+		# PointsPrimitive with Color4fVectorData primitive variable
+
+		points = IECoreScene.PointsPrimitive( IECore.V3fVectorData( [ imath.V3f( 0 ), imath.V3f( 1 ) ] ) )
+		points["myColor4"] = IECoreScene.PrimitiveVariable(
+			IECoreScene.PrimitiveVariable.Interpolation.Vertex,
+			IECore.Color4fVectorData( [ imath.Color4f( 1, 2, 3, 4 ), imath.Color4f( 5, 6, 7, 8 ) ] )
+		)
+
+		objectToScene = GafferScene.ObjectToScene()
+		objectToScene["object"].setValue( points )
+
+		self.assertSceneValid( objectToScene["out"] )
+
+		# Shading network to read primitive variable in and copy to Color3fVectorData Cs
+
+		inColor = GafferOSL.OSLShader()
+		inColor.loadShader( "ObjectProcessing/InColor" )
+		inColor["parameters"]["name"].setValue( "myColor4" )
+
+		outColor = GafferOSL.OSLShader()
+		outColor.loadShader( "ObjectProcessing/OutColor" )
+		outColor["parameters"]["value"].setInput( inColor["out"]["value"] )
+
+		outObject = GafferOSL.OSLShader()
+		outObject.loadShader( "ObjectProcessing/OutObject" )
+		outObject["parameters"]["in0"].setInput( outColor["out"]["primitiveVariable"] )
+
+		# OSLObject node to apply network
+
+		filter = GafferScene.PathFilter()
+		filter["paths"].setValue( IECore.StringVectorData( [ "/object" ] ) )
+
+		oslObject = GafferOSL.OSLObject()
+		oslObject["in"].setInput( objectToScene["out"] )
+		oslObject["filter"].setInput( filter["out"] )
+		oslObject["shader"].setInput( outObject["out"] )
+
+		# Assertions
+
+		outPoints = oslObject["out"].object( "/object" )
+
+		self.assertIn( "Cs", outPoints )
+		self.assertEqual( outPoints["Cs"].interpolation, IECoreScene.PrimitiveVariable.Interpolation.Vertex )
+		self.assertEqual(
+			outPoints["Cs"].data,
+			IECore.Color3fVectorData( [ imath.Color3f( 1, 2, 3 ), imath.Color3f( 5, 6, 7 ) ] )
+		)
 
 if __name__ == "__main__":
 	unittest.main()

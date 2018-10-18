@@ -58,6 +58,7 @@ namespace
 
 const char *setName( GraphComponent &c, const IECore::InternedString &name )
 {
+	IECorePython::ScopedGILRelease gilRelease;
 	return c.setName( name ).c_str();
 }
 
@@ -131,6 +132,12 @@ void removeChild( GraphComponent &g, GraphComponentPtr c )
 	g.removeChild( c );
 }
 
+void clearChildren( GraphComponent &g )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	g.clearChildren();
+}
+
 GraphComponentPtr getChild( GraphComponent &g, const IECore::InternedString &n )
 {
 	return g.getChild( n );
@@ -192,6 +199,13 @@ void delItem( GraphComponent &g, const IECore::InternedString &n )
 	}
 
 	throwKeyError( g, n );
+}
+
+void delItem( GraphComponent &g, long index )
+{
+	GraphComponentPtr c = getItem( g, index );
+	IECorePython::ScopedGILRelease gilRelease;
+	g.removeChild( c );
 }
 
 int length( GraphComponent &g )
@@ -278,14 +292,15 @@ void GafferModule::bindGraphComponent()
 		.def( "nameChangedSignal", &GraphComponent::nameChangedSignal, return_internal_reference<1>() )
 		.def( "addChild", &addChild )
 		.def( "removeChild", &removeChild )
-		.def( "clearChildren", &GraphComponent::clearChildren )
+		.def( "clearChildren", &clearChildren )
 		.def( "setChild", &setChild )
 		.def( "getChild", &getChild )
 		.def( "descendant", &descendant )
 		.def( "__getitem__", (GraphComponentPtr (*)( GraphComponent &, const IECore::InternedString & ))&getItem )
 		.def( "__getitem__", (GraphComponentPtr (*)( GraphComponent &, long ))&getItem )
 		.def( "__setitem__", &setChild )
-		.def( "__delitem__", delItem )
+		.def( "__delitem__", (void (*)( GraphComponent &, const IECore::InternedString & ))delItem )
+		.def( "__delitem__", (void (*)( GraphComponent &, long ))&delItem )
 		.def( "__contains__", contains )
 		.def( "__len__", &length )
 		.def( "__nonzero__", &nonZero )

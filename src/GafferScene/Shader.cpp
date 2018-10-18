@@ -37,7 +37,7 @@
 
 #include "GafferScene/Shader.h"
 
-#include "Gaffer/CompoundDataPlug.h"
+#include "Gaffer/PlugAlgo.h"
 #include "Gaffer/Metadata.h"
 #include "Gaffer/NumericPlug.h"
 #include "Gaffer/ScriptNode.h"
@@ -218,7 +218,7 @@ class Shader::NetworkBuilder
 					assert( isInputParameter( parameterPlug ) );
 					const Gaffer::Plug *source = parameterPlug->source<Gaffer::Plug>();
 
-					if( const SwitchComputeNode *switchNode = source->parent<SwitchComputeNode>() )
+					if( const Switch *switchNode = source->parent<Switch>() )
 					{
 						// Special case for switches with context-varying index values.
 						// Query the active input for this context, and manually traverse
@@ -722,7 +722,7 @@ IECore::DataPtr Shader::parameterValue( const Gaffer::Plug *parameterPlug ) cons
 {
 	if( const Gaffer::ValuePlug *valuePlug = IECore::runTimeCast<const Gaffer::ValuePlug>( parameterPlug ) )
 	{
-		return Gaffer::CompoundDataPlug::extractDataFromPlug( valuePlug );
+		return Gaffer::PlugAlgo::extractDataFromPlug( valuePlug );
 	}
 
 	return nullptr;

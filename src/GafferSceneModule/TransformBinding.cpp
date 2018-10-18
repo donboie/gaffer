@@ -44,6 +44,7 @@
 #include "GafferScene/ParentConstraint.h"
 #include "GafferScene/PointConstraint.h"
 #include "GafferScene/Transform.h"
+#include "GafferScene/CollectTransforms.h"
 
 #include "GafferBindings/ComputeNodeBinding.h"
 
@@ -61,6 +62,14 @@ void GafferSceneModule::bindTransform()
 				(
 					arg( "name" ) = GraphComponent::defaultName<FilteredSceneProcessor>(),
 					arg( "filterDefault" ) = IECore::PathMatcher::EveryMatch
+				)
+			)
+		)
+		.def( init<const std::string &, size_t, size_t>(
+				(
+					arg( "name" ),
+					arg( "minInputs" ),
+					arg( "maxInputs" ) = std::numeric_limits<size_t>::max()
 				)
 			)
 		)
@@ -95,5 +104,7 @@ void GafferSceneModule::bindTransform()
 			.value( "ResetWorld", Transform::ResetWorld )
 		;
 	}
+
+	GafferBindings::DependencyNodeClass<GafferScene::CollectTransforms>();
 
 }

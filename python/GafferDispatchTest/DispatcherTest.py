@@ -409,7 +409,7 @@ class DispatcherTest( GafferTest.TestCase ) :
 		with IECore.CapturingMessageHandler() as mh :
 			s["n1"]["preTasks"][0].setInput( s["n4"]["task"] )
 		self.assertEqual( len( mh.messages ), 1 )
-		self.assertRegexpMatches( mh.messages[0].message, "The graph must be a DAG" )
+		self.assertRegexpMatches( mh.messages[0].message, "Cycle detected between ScriptNode.n1.preTasks.preTask0 and ScriptNode.n1.task" )
 
 		self.assertNotEqual( s["n1"]["task"].hash(), s["n2"]["task"].hash() )
 		self.assertNotEqual( s["n2"]["task"].hash(), s["n3"]["task"].hash() )
@@ -1080,7 +1080,7 @@ class DispatcherTest( GafferTest.TestCase ) :
 		with IECore.CapturingMessageHandler() as mh :
 			s["t"]["preTasks"][0].setInput( s["t"]["task"] )
 		self.assertEqual( len( mh.messages ), 1 )
-		self.assertRegexpMatches( mh.messages[0].message, "The graph must be a DAG" )
+		self.assertRegexpMatches( mh.messages[0].message, "Cycle detected between ScriptNode.t.preTasks.preTask0 and ScriptNode.t.task" )
 
 		dispatcher = GafferDispatch.Dispatcher.create( "testDispatcher" )
 		self.assertRaisesRegexp( RuntimeError, "cannot have cyclic dependencies", dispatcher.dispatch, [ s["t"] ] )
@@ -1608,6 +1608,20 @@ class DispatcherTest( GafferTest.TestCase ) :
 			self.assertEqual( batch.frames(), [ i + 1 ] )
 			self.assertNotIn( "frame", batch.context() )
 			self.assertEqual( batch.context(), batches[0].context() )
+
+	def testNullScriptInFrameRangeCall( self ) :
+
+		d = self.NullDispatcher()
+		d["framesMode"].setValue( d.FramesMode.FullRange )
+		with self.assertRaisesRegexp( Exception, "Python argument types in" ) :
+			d.frameRange( None, Gaffer.Context() )
+
+	def testNullContextInFrameRangeCall( self ) :
+
+		d = self.NullDispatcher()
+		d["framesMode"].setValue( d.FramesMode.CurrentFrame )
+		with self.assertRaisesRegexp( Exception, "Python argument types in" ) :
+			d.frameRange( Gaffer.ScriptNode(), None )
 
 if __name__ == "__main__":
 	unittest.main()

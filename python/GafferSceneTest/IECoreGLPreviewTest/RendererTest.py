@@ -60,6 +60,7 @@ class RendererTest( GafferTest.TestCase ) :
 
 		r = GafferScene.Private.IECoreScenePreview.Renderer.create( "OpenGL" )
 		self.assertTrue( isinstance( r, GafferScene.Private.IECoreScenePreview.Renderer ) )
+		self.assertEqual( r.name(), "OpenGL" )
 
 	def testOtherRendererAttributes( self ) :
 
@@ -80,7 +81,7 @@ class RendererTest( GafferTest.TestCase ) :
 	def testPrimVars( self ) :
 
 		renderer = GafferScene.Private.IECoreScenePreview.Renderer.create( "OpenGL" )
-		renderer.output( "test", IECoreScene.Output( self.temporaryDirectory() + "/testPrimVars.tif", "tiff", "rgba", {} ) )
+		renderer.output( "test", IECoreScene.Output( self.temporaryDirectory() + "/testPrimVars.exr", "exr", "rgba", {} ) )
 
 		fragmentSource = """
 		uniform float red;
@@ -136,7 +137,7 @@ class RendererTest( GafferTest.TestCase ) :
 
 		renderer.render()
 
-		image = IECore.Reader.create(  self.temporaryDirectory() + "/testPrimVars.tif" ).read()
+		image = IECore.Reader.create(  self.temporaryDirectory() + "/testPrimVars.exr" ).read()
 		dimensions = image.dataWindow.size() + imath.V2i( 1 )
 		index = dimensions.x * int( dimensions.y * 0.5 )
 		self.assertEqual( image["R"][index], 0 )
@@ -156,7 +157,7 @@ class RendererTest( GafferTest.TestCase ) :
 	def testShaderParameters( self ) :
 
 		renderer = GafferScene.Private.IECoreScenePreview.Renderer.create( "OpenGL" )
-		renderer.output( "test", IECoreScene.Output( self.temporaryDirectory() + "/testShaderParameters.tif", "tiff", "rgba", {} ) )
+		renderer.output( "test", IECoreScene.Output( self.temporaryDirectory() + "/testShaderParameters.exr", "exr", "rgba", {} ) )
 
 		fragmentSource = """
 		uniform vec3 colorValue;
@@ -190,6 +191,34 @@ class RendererTest( GafferTest.TestCase ) :
 		)
 
 		renderer.render()
+
+	def testQueryBound( self ) :
+
+		renderer = GafferScene.Private.IECoreScenePreview.Renderer.create(
+			"OpenGL",
+			GafferScene.Private.IECoreScenePreview.Renderer.RenderType.Interactive
+		)
+
+		cube = IECoreScene.MeshPrimitive.createBox( imath.Box3f( imath.V3f( -1 ), imath.V3f( 9 ) ) )
+
+		o = renderer.object(
+			"/cube",
+			cube,
+			renderer.attributes( IECore.CompoundObject() )
+		)
+		o.transform(
+			imath.M44f().translate( imath.V3f( 1 ) )
+		)
+
+		self.assertEqual(
+			renderer.command( "gl:queryBound", {} ),
+			imath.Box3f(
+				cube.bound().min() + imath.V3f( 1 ),
+				cube.bound().max() + imath.V3f( 1 )
+			)
+		)
+
+		del o
 
 if __name__ == "__main__":
 	unittest.main()

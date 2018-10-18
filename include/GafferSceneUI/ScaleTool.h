@@ -64,7 +64,7 @@ class GAFFERSCENEUI_API ScaleTool : public TransformTool
 	protected :
 
 		bool affectsHandles( const Gaffer::Plug *input ) const override;
-		void updateHandles() override;
+		void updateHandles( float rasterScale ) override;
 
 	private :
 
@@ -73,12 +73,19 @@ class GAFFERSCENEUI_API ScaleTool : public TransformTool
 		// method.
 		struct Scale
 		{
-			Imath::V3f originalScale;
-			GafferUI::Style::Axes axes;
-		};
 
-		Scale createScale( GafferUI::Style::Axes axes );
-		void applyScale( const Scale &scale, float s );
+			Scale( const Selection &selection );
+
+			bool canApply( const Imath::V3i &axisMask ) const;
+			void apply( const Imath::V3f &scale ) const;
+
+			private :
+
+				Gaffer::V3fPlugPtr m_plug;
+				Imath::V3f m_originalScale;
+				float m_time;
+
+		};
 
 		// Drag handling.
 
@@ -86,7 +93,7 @@ class GAFFERSCENEUI_API ScaleTool : public TransformTool
 		bool dragMove( const GafferUI::Gadget *gadget, const GafferUI::DragDropEvent &event );
 		bool dragEnd();
 
-		Scale m_drag;
+		std::vector<Scale> m_drag;
 
 		static ToolDescription<ScaleTool, SceneView> g_toolDescription;
 
